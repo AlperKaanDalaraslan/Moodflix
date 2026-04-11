@@ -1,7 +1,9 @@
 /**
- * TMDB read access token / API key.
- * Create one at https://www.themoviedb.org/settings/api and paste it here.
+ * TMDB credentials come from the project root ".env" (see .env.example).
+ * Never commit ".env"; rotate keys if they are ever exposed.
  */
-export const TMDB_API_KEY = '';
+import {TMDB_API_KEY as envKey} from '@env';
+
+export const TMDB_API_KEY = (envKey || '').trim();
 
 export const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p';

@@ -25,7 +25,7 @@ export const translations = {
     error: 'Something went wrong',
     missingKeyTitle: 'TMDB API key',
     missingKeyBody:
-      'Add your TMDB API key in src/config/tmdb.js to load movies.',
+      'Add TMDB_API_KEY to a root ".env" file (copy from .env.example) to load movies.',
     tryAgain: 'Try again',
     searchPlaceholder: 'Search movies…',
     noResults: 'No results',
@@ -79,7 +79,7 @@ export const translations = {
     error: 'Bir şeyler ters gitti',
     missingKeyTitle: 'TMDB API anahtarı',
     missingKeyBody:
-      'Filmleri yüklemek için src/config/tmdb.js dosyasına TMDB API anahtarını ekleyin.',
+      'Filmleri yüklemek için proje kökünde ".env" dosyasına TMDB_API_KEY ekleyin (.env.example dosyasını kopyalayın).',
     tryAgain: 'Yeniden dene',
     searchPlaceholder: 'Film ara…',
     noResults: 'Sonuç yok',

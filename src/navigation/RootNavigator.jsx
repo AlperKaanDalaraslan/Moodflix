@@ -2,11 +2,12 @@ import {NavigationContainer, DarkTheme, DefaultTheme} from '@react-navigation/na
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import React, {useMemo} from 'react';
-import {Text, View} from 'react-native';
+import {StyleSheet, Text, View} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useSettings} from '../context/SettingsContext';
 import {t} from '../i18n/translations';
 import {getTheme} from '../theme/colors';
+import {shadow} from '../theme/shadows';
 import {DiscoverScreen} from '../screens/DiscoverScreen';
 import {FavoritesScreen} from '../screens/FavoritesScreen';
 import {HomeScreen} from '../screens/HomeScreen';
@@ -27,6 +28,7 @@ function TabLabel({focused, label, colors}) {
         fontWeight: focused ? '700' : '500',
         color: focused ? colors.primary : colors.textMuted,
         marginTop: 2,
+        letterSpacing: focused ? -0.1 : 0,
       }}>
       {label}
     </Text>
@@ -43,11 +45,13 @@ function MainTabs() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: colors.surface,
+          backgroundColor: colors.background,
+          borderTopWidth: StyleSheet.hairlineWidth,
           borderTopColor: colors.border,
           height: 58 + insets.bottom,
           paddingBottom: Math.max(insets.bottom, 8),
           paddingTop: 6,
+          ...shadow.tabBar,
         },
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,

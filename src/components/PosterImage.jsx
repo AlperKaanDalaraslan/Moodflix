@@ -6,6 +6,8 @@ const sizeToSegment = {
   small: 'w185',
   medium: 'w342',
   large: 'w500',
+  /** Wider hero still — sharper on retina without huge payloads */
+  backdrop: 'w780',
 };
 
 export function PosterImage({posterPath, colors, style, size = 'medium'}) {
@@ -37,7 +39,7 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: 14,
     overflow: 'hidden',
-    backgroundColor: '#00000022',
+    backgroundColor: '#000',
   },
   image: {
     width: '100%',

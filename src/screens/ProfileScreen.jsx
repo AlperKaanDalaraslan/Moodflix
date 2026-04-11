@@ -4,6 +4,7 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import {useSettings} from '../context/SettingsContext';
 import {t} from '../i18n/translations';
 import {getTheme} from '../theme/colors';
+import {shadow} from '../theme/shadows';
 
 const LOCALES = ['tr-TR', 'en-US'];
 const THEMES = ['dark', 'light'];
@@ -65,7 +66,7 @@ export function ProfileScreen() {
 
         <TouchableOpacity
           onPress={onPremium}
-          style={[styles.premium, {backgroundColor: colors.primary}]}>
+          style={[styles.premium, {backgroundColor: colors.primary}, shadow.hero]}>
           <Text style={{color: colors.onPrimary, fontWeight: '900'}}>{t(locale, 'premium')}</Text>
           <Text style={{color: colors.onPrimary, opacity: 0.85, marginTop: 6}}>
             {t(locale, 'premiumHint')}

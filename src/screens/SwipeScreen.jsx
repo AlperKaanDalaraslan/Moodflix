@@ -98,7 +98,7 @@ function SwipeCard({movie, colors, onResult}) {
       ]}>
       <View style={{flex: 1, borderRadius: 22, overflow: 'hidden'}}>
         <PosterImage posterPath={movie.poster_path} colors={colors} size="large" />
-        <View style={[styles.grad, {backgroundColor: colors.overlay}]} />
+        <View style={styles.bottomScrim} pointerEvents="none" />
         <Animated.View
           pointerEvents="none"
           style={[
@@ -112,7 +112,7 @@ function SwipeCard({movie, colors, onResult}) {
           <Text numberOfLines={2} style={[styles.title, {color: colors.text}]}>
             {movie.title}
           </Text>
-          <Text style={{color: colors.textMuted, marginTop: 6}}>
+          <Text style={[styles.rating, {color: colors.textMuted}]}>
             ★ {movie.vote_average.toFixed(1)}
           </Text>
         </View>
@@ -231,7 +231,7 @@ export function SwipeScreen() {
           <View style={styles.actions}>
             <TouchableOpacity
               onPress={() => onSwipe('left')}
-              style={[styles.circle, {borderColor: colors.border}]}>
+              style={[styles.circle, {borderColor: colors.border, backgroundColor: colors.surfaceElevated}]}>
               <Text style={{color: colors.pass, fontSize: 26, fontWeight: '900'}}>✕</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -265,14 +265,33 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 22,
     overflow: 'hidden',
-    opacity: 0.55,
+    opacity: 0.62,
   },
-  grad: {
-    ...StyleSheet.absoluteFill,
-    opacity: 0.35,
+  /** Keeps the poster vivid while text stays readable at the bottom */
+  bottomScrim: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: '46%',
+    backgroundColor: 'rgba(0,0,0,0.78)',
   },
-  meta: {position: 'absolute', left: 14, right: 14, bottom: 14},
-  title: {fontSize: 20, fontWeight: '900'},
+  meta: {position: 'absolute', left: 14, right: 14, bottom: 16},
+  title: {
+    fontSize: 22,
+    fontWeight: '900',
+    textShadowColor: 'rgba(0,0,0,0.85)',
+    textShadowOffset: {width: 0, height: 1},
+    textShadowRadius: 8,
+  },
+  rating: {
+    marginTop: 8,
+    fontSize: 15,
+    fontWeight: '700',
+    textShadowColor: 'rgba(0,0,0,0.75)',
+    textShadowOffset: {width: 0, height: 1},
+    textShadowRadius: 6,
+  },
   stamp: {
     position: 'absolute',
     top: 16,
@@ -298,6 +317,5 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#00000022',
   },
 });

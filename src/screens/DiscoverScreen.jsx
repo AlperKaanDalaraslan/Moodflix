@@ -14,6 +14,7 @@ import {MOOD_GENRES} from '../constants/moodGenres';
 import {useSettings} from '../context/SettingsContext';
 import {t} from '../i18n/translations';
 import {getTheme} from '../theme/colors';
+import {shadow} from '../theme/shadows';
 
 const MOODS = [
   {id: 'happy', emoji: '😄', labelKey: 'moodHappy'},
@@ -136,6 +137,7 @@ export function DiscoverScreen() {
                       borderColor: active ? colors.primary : colors.border,
                       backgroundColor: active ? colors.surfaceElevated : colors.surface,
                     },
+                    active ? shadow.soft : null,
                   ]}>
                   <Text style={{fontSize: 28}}>{m.emoji}</Text>
                   <Text style={{color: colors.text, marginTop: 6, fontWeight: '700'}}>
@@ -186,26 +188,34 @@ export function DiscoverScreen() {
 
           <Text style={[styles.label, {color: colors.text, marginTop: 18}]}>{t(locale, 'yearFrom')}</Text>
           <View style={styles.stepper}>
-            <TouchableOpacity onPress={() => bumpYear('min', -1)} style={[styles.stepBtn, {borderColor: colors.border}]}>
+            <TouchableOpacity
+              onPress={() => bumpYear('min', -1)}
+              style={[styles.stepBtn, {borderColor: colors.border, backgroundColor: colors.surfaceElevated}]}>
               <Text style={{color: colors.text, fontWeight: '900'}}>−</Text>
             </TouchableOpacity>
             <Text style={{color: colors.text, fontSize: 18, fontWeight: '800', minWidth: 64, textAlign: 'center'}}>
               {minYear}
             </Text>
-            <TouchableOpacity onPress={() => bumpYear('min', 1)} style={[styles.stepBtn, {borderColor: colors.border}]}>
+            <TouchableOpacity
+              onPress={() => bumpYear('min', 1)}
+              style={[styles.stepBtn, {borderColor: colors.border, backgroundColor: colors.surfaceElevated}]}>
               <Text style={{color: colors.text, fontWeight: '900'}}>+</Text>
             </TouchableOpacity>
           </View>
 
           <Text style={[styles.label, {color: colors.text, marginTop: 14}]}>{t(locale, 'yearTo')}</Text>
           <View style={styles.stepper}>
-            <TouchableOpacity onPress={() => bumpYear('max', -1)} style={[styles.stepBtn, {borderColor: colors.border}]}>
+            <TouchableOpacity
+              onPress={() => bumpYear('max', -1)}
+              style={[styles.stepBtn, {borderColor: colors.border, backgroundColor: colors.surfaceElevated}]}>
               <Text style={{color: colors.text, fontWeight: '900'}}>−</Text>
             </TouchableOpacity>
             <Text style={{color: colors.text, fontSize: 18, fontWeight: '800', minWidth: 64, textAlign: 'center'}}>
               {maxYear}
             </Text>
-            <TouchableOpacity onPress={() => bumpYear('max', 1)} style={[styles.stepBtn, {borderColor: colors.border}]}>
+            <TouchableOpacity
+              onPress={() => bumpYear('max', 1)}
+              style={[styles.stepBtn, {borderColor: colors.border, backgroundColor: colors.surfaceElevated}]}>
               <Text style={{color: colors.text, fontWeight: '900'}}>+</Text>
             </TouchableOpacity>
           </View>
@@ -214,7 +224,7 @@ export function DiscoverScreen() {
           <View style={styles.stepper}>
             <TouchableOpacity
               onPress={() => setMinVote(v => Math.max(0, Math.round((v - 0.5) * 10) / 10))}
-              style={[styles.stepBtn, {borderColor: colors.border}]}>
+              style={[styles.stepBtn, {borderColor: colors.border, backgroundColor: colors.surfaceElevated}]}>
               <Text style={{color: colors.text, fontWeight: '900'}}>−</Text>
             </TouchableOpacity>
             <Text style={{color: colors.text, fontSize: 18, fontWeight: '800', minWidth: 64, textAlign: 'center'}}>
@@ -222,7 +232,7 @@ export function DiscoverScreen() {
             </Text>
             <TouchableOpacity
               onPress={() => setMinVote(v => Math.min(10, Math.round((v + 0.5) * 10) / 10))}
-              style={[styles.stepBtn, {borderColor: colors.border}]}>
+              style={[styles.stepBtn, {borderColor: colors.border, backgroundColor: colors.surfaceElevated}]}>
               <Text style={{color: colors.text, fontWeight: '900'}}>+</Text>
             </TouchableOpacity>
           </View>
@@ -236,7 +246,7 @@ export function DiscoverScreen() {
           <TouchableOpacity
             disabled={busy}
             onPress={() => void recommend()}
-            style={[styles.cta, {backgroundColor: colors.primary, opacity: busy ? 0.6 : 1}]}>
+            style={[styles.cta, {backgroundColor: colors.primary, opacity: busy ? 0.6 : 1}, shadow.hero]}>
             {busy ? (
               <ActivityIndicator color={colors.onPrimary} />
             ) : (

@@ -18,6 +18,7 @@ import {useFavorites} from '../context/FavoritesContext';
 import {useSettings} from '../context/SettingsContext';
 import {t} from '../i18n/translations';
 import {getTheme} from '../theme/colors';
+import {shadow} from '../theme/shadows';
 
 export function MovieDetailScreen() {
   const {params} = useRoute();
@@ -124,11 +125,20 @@ export function MovieDetailScreen() {
     <SafeAreaView style={{flex: 1, backgroundColor: colors.background}} edges={['bottom']}>
       <ScrollView contentContainerStyle={{paddingBottom: 24}} showsVerticalScrollIndicator={false}>
         <View style={{paddingHorizontal: 16, paddingTop: 8}}>
-          <View style={{aspectRatio: 16 / 9, borderRadius: 18, overflow: 'hidden'}}>
-            <PosterImage posterPath={movie.backdrop_path ?? movie.poster_path} colors={colors} size="large" />
+          <View
+            style={[
+              styles.heroMedia,
+              {borderColor: colors.border, backgroundColor: '#000'},
+              shadow.poster,
+            ]}>
+            <PosterImage
+              posterPath={movie.backdrop_path ?? movie.poster_path}
+              colors={colors}
+              size="backdrop"
+            />
             {trailerKey ? (
               <Pressable onPress={openTrailer} style={styles.play}>
-                <View style={[styles.playBtn, {backgroundColor: colors.primary}]}>
+                <View style={[styles.playBtn, {backgroundColor: colors.primary}, shadow.soft]}>
                   <Text style={{color: colors.onPrimary, fontWeight: '900'}}>▶</Text>
                 </View>
               </Pressable>
@@ -136,7 +146,7 @@ export function MovieDetailScreen() {
           </View>
 
           <Text style={[styles.title, {color: colors.text}]}>{movie.title}</Text>
-          <Text style={{color: colors.textMuted, marginTop: 6}}>
+          <Text style={[styles.metaLine, {color: colors.textMuted}]}>
             {year} · {t(locale, 'rating')}: ★ {movie.vote_average.toFixed(1)}
           </Text>
 
@@ -148,7 +158,12 @@ export function MovieDetailScreen() {
             ))}
           </View>
 
-          <View style={[styles.metaCard, {backgroundColor: colors.surface, borderColor: colors.border}]}>
+          <View
+            style={[
+              styles.metaCard,
+              {backgroundColor: colors.surfaceElevated, borderColor: colors.border},
+              shadow.soft,
+            ]}>
             <Text style={{color: colors.textMuted}}>{t(locale, 'director')}</Text>
             <Text style={{color: colors.text, fontWeight: '700', marginTop: 4}}>{director}</Text>
             <Text style={{color: colors.textMuted, marginTop: 10}}>{t(locale, 'writer')}</Text>
@@ -166,13 +181,13 @@ export function MovieDetailScreen() {
           {trailerKey ? (
             <TouchableOpacity
               onPress={openTrailer}
-              style={[styles.ctaWide, {backgroundColor: colors.primary}]}>
+              style={[styles.ctaWide, {backgroundColor: colors.primary}, shadow.hero]}>
               <Text style={{color: colors.onPrimary, fontWeight: '900'}}>{t(locale, 'trailer')}</Text>
             </TouchableOpacity>
           ) : null}
 
           <Text style={[styles.sectionTitle, {color: colors.text}]}>{t(locale, 'overview')}</Text>
-          <Text style={{color: colors.textMuted, lineHeight: 20}}>{movie.overview || '—'}</Text>
+          <Text style={[styles.overviewBody, {color: colors.textMuted}]}>{movie.overview || '—'}</Text>
 
           <Text style={[styles.sectionTitle, {color: colors.text, marginTop: 18}]}>
             {t(locale, 'cast')}
@@ -206,12 +221,15 @@ export function MovieDetailScreen() {
 
 const styles = StyleSheet.create({
   center: {flex: 1, alignItems: 'center', justifyContent: 'center'},
-  title: {fontSize: 26, fontWeight: '900', marginTop: 14},
+  heroMedia: {aspectRatio: 16 / 9, borderRadius: 14, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth},
+  title: {fontSize: 28, fontWeight: '900', marginTop: 16, letterSpacing: -0.3},
+  metaLine: {marginTop: 8, fontSize: 15, fontWeight: '600'},
+  overviewBody: {lineHeight: 22, fontSize: 15},
   tags: {flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12},
   tag: {paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999},
   metaCard: {marginTop: 14, padding: 14, borderRadius: 16, borderWidth: 1},
   cta: {paddingHorizontal: 16, paddingVertical: 10, borderRadius: 999},
-  ctaWide: {marginTop: 14, paddingVertical: 14, borderRadius: 16, alignItems: 'center'},
+  ctaWide: {marginTop: 14, paddingVertical: 16, borderRadius: 14, alignItems: 'center'},
   sectionTitle: {fontSize: 16, fontWeight: '900', marginBottom: 10, marginTop: 16},
   play: {...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center'},
   playBtn: {width: 54, height: 54, borderRadius: 999, alignItems: 'center', justifyContent: 'center'},

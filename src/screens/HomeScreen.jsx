@@ -21,6 +21,7 @@ import {PosterImage} from '../components/PosterImage';
 import {useSettings} from '../context/SettingsContext';
 import {t} from '../i18n/translations';
 import {getTheme} from '../theme/colors';
+import {shadow} from '../theme/shadows';
 
 export function HomeScreen() {
   const {locale, theme} = useSettings();
@@ -76,15 +77,23 @@ export function HomeScreen() {
         contentContainerStyle={{paddingHorizontal: 16, gap: 12}}
         renderItem={({item}) => (
           <Pressable onPress={() => goMovie(item.id)} style={{width: 120}}>
-            <View style={{aspectRatio: 2 / 3, borderRadius: 14, overflow: 'hidden'}}>
-              <PosterImage posterPath={item.poster_path} colors={colors} size="medium" />
+            <View style={[shadow.poster, {borderRadius: 14, backgroundColor: '#000'}]}>
+              <View style={{aspectRatio: 2 / 3, borderRadius: 14, overflow: 'hidden'}}>
+                <PosterImage posterPath={item.poster_path} colors={colors} size="medium" />
+              </View>
             </View>
             <Text
               numberOfLines={2}
-              style={{color: colors.text, marginTop: 8, fontSize: 13, fontWeight: '600'}}>
+              style={{
+                color: colors.text,
+                marginTop: 10,
+                fontSize: 14,
+                fontWeight: '700',
+                letterSpacing: -0.2,
+              }}>
               {item.title}
             </Text>
-            <Text style={{color: colors.textMuted, fontSize: 12}}>
+            <Text style={{color: colors.textMuted, fontSize: 13, fontWeight: '600', marginTop: 2}}>
               ★ {item.vote_average.toFixed(1)}
             </Text>
           </Pressable>
@@ -130,7 +139,7 @@ export function HomeScreen() {
         <ScrollView contentContainerStyle={{paddingBottom: 24}} showsVerticalScrollIndicator={false}>
           <TouchableOpacity
             onPress={() => navigation.navigate('Discover')}
-            style={[styles.heroCta, {backgroundColor: colors.primary}]}>
+            style={[styles.heroCta, {backgroundColor: colors.primary}, shadow.hero]}>
             <Text style={[styles.heroCtaText, {color: colors.onPrimary}]}>{t(locale, 'whatToday')}</Text>
             <Text style={{color: colors.onPrimary, opacity: 0.85, marginTop: 4}}>
               {t(locale, 'pickForYou')}
@@ -191,7 +200,13 @@ const styles = StyleSheet.create({
   },
   heroCtaText: {fontSize: 17, fontWeight: '800'},
   section: {marginBottom: 22},
-  sectionTitle: {fontSize: 18, fontWeight: '800', marginBottom: 12, paddingHorizontal: 16},
+  sectionTitle: {
+    fontSize: 19,
+    fontWeight: '800',
+    marginBottom: 12,
+    paddingHorizontal: 16,
+    letterSpacing: -0.2,
+  },
   chip: {
     paddingHorizontal: 14,
     paddingVertical: 10,

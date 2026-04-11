@@ -12,9 +12,11 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {hasApiKey, searchMovies} from '../api/tmdbClient';
 import {PosterImage} from '../components/PosterImage';
+import {SearchEmptyState} from '../components/SearchEmptyState';
 import {useSettings} from '../context/SettingsContext';
 import {t} from '../i18n/translations';
 import {getTheme} from '../theme/colors';
+import {shadow} from '../theme/shadows';
 
 export function SearchScreen() {
   const {locale, theme} = useSettings();
@@ -25,8 +27,20 @@ export function SearchScreen() {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  /** Last query we actually sent to the API — drives empty-state copy */
+  const [searchedFor, setSearchedFor] = useState('');
 
   const canSearch = useMemo(() => q.trim().length >= 2, [q]);
+
+  const emptyVariant = useMemo(() => {
+    if (!canSearch) {
+      return 'idle';
+    }
+    if (searchedFor === q.trim()) {
+      return 'noMatch';
+    }
+    return 'ready';
+  }, [canSearch, q, searchedFor]);
 
   const runSearch = useCallback(async () => {
     if (!hasApiKey()) {
@@ -41,6 +55,7 @@ export function SearchScreen() {
     try {
       const res = await searchMovies(locale, q.trim(), 1);
       setResults(res.results);
+      setSearchedFor(q.trim());
     } catch (e) {
       setError(e instanceof Error ? e.message : 'err');
     } finally {
@@ -55,7 +70,12 @@ export function SearchScreen() {
       </View>
 
       <View style={{paddingHorizontal: 16}}>
-        <View style={[styles.inputWrap, {backgroundColor: colors.surface, borderColor: colors.border}]}>
+        <View
+          style={[
+            styles.inputWrap,
+            {backgroundColor: colors.surfaceElevated, borderColor: colors.border},
+            shadow.soft,
+          ]}>
           <Text style={{color: colors.textMuted, marginRight: 8}}>🔎</Text>
           <TextInput
             value={q}
@@ -95,23 +115,36 @@ export function SearchScreen() {
           keyExtractor={item => String(item.id)}
           numColumns={2}
           columnWrapperStyle={{gap: 12, paddingHorizontal: 16}}
-          contentContainerStyle={{paddingTop: 14, paddingBottom: 24, gap: 14}}
+          contentContainerStyle={
+            results.length === 0
+              ? {
+                  paddingTop: 14,
+                  paddingBottom: 24,
+                  flexGrow: 1,
+                  justifyContent: 'center',
+                }
+              : {paddingTop: 14, paddingBottom: 24, gap: 14}
+          }
           ListEmptyComponent={
-            <Text style={{color: colors.textMuted, paddingHorizontal: 16, marginTop: 10}}>
-              {t(locale, 'noResults')}
-            </Text>
+            <SearchEmptyState colors={colors} locale={locale} variant={emptyVariant} />
           }
           renderItem={({item}) => (
             <TouchableOpacity
               onPress={() => navigation.navigate('MovieDetail', {movieId: item.id})}
               style={{flex: 1}}>
-              <View style={{aspectRatio: 2 / 3, borderRadius: 16, overflow: 'hidden'}}>
-                <PosterImage posterPath={item.poster_path} colors={colors} size="medium" />
+              <View style={[shadow.poster, {borderRadius: 16, backgroundColor: '#000'}]}>
+                <View style={{aspectRatio: 2 / 3, borderRadius: 16, overflow: 'hidden'}}>
+                  <PosterImage posterPath={item.poster_path} colors={colors} size="medium" />
+                </View>
               </View>
-              <Text numberOfLines={2} style={{color: colors.text, marginTop: 8, fontWeight: '700'}}>
+              <Text
+                numberOfLines={2}
+                style={{color: colors.text, marginTop: 10, fontWeight: '700', fontSize: 14, letterSpacing: -0.2}}>
                 {item.title}
               </Text>
-              <Text style={{color: colors.textMuted, marginTop: 4}}>★ {item.vote_average.toFixed(1)}</Text>
+              <Text style={{color: colors.textMuted, marginTop: 4, fontWeight: '600'}}>
+                ★ {item.vote_average.toFixed(1)}
+              </Text>
             </TouchableOpacity>
           )}
         />

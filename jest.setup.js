@@ -22,6 +22,12 @@ jest.mock('@react-navigation/native', () => {
     DefaultTheme: {colors: {}},
     useNavigation: () => ({navigate: jest.fn(), setOptions: jest.fn()}),
     useRoute: () => ({params: {}}),
+    useFocusEffect: cb => {
+      React.useEffect(() => {
+        const unsub = cb();
+        return typeof unsub === 'function' ? unsub : undefined;
+      }, [cb]);
+    },
   };
 });
 
@@ -42,6 +48,14 @@ jest.mock('@react-navigation/bottom-tabs', () => {
       Navigator: ({children}) => React.createElement(React.Fragment, null, children),
       Screen: () => null,
     }),
+  };
+});
+
+jest.mock('react-native-webview', () => {
+  const React = require('react');
+  const RN = require('react-native');
+  return {
+    WebView: props => React.createElement(RN.View, {...props, testID: 'webview-mock'}),
   };
 });
 

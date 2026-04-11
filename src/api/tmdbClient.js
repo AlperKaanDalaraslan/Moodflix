@@ -48,6 +48,14 @@ export function fetchPopular(language, page = 1) {
   return getJson(buildUrl('/movie/popular', language, {page}));
 }
 
+export function fetchNowPlaying(language, page = 1) {
+  return getJson(buildUrl('/movie/now_playing', language, {page}));
+}
+
+export function fetchUpcoming(language, page = 1) {
+  return getJson(buildUrl('/movie/upcoming', language, {page}));
+}
+
 export function searchMovies(language, query, page = 1) {
   return getJson(
     buildUrl('/search/movie', language, {query, page, include_adult: 'false'}),
@@ -60,6 +68,98 @@ export function fetchMovieDetail(language, id) {
       append_to_response: 'credits,videos',
     }),
   );
+}
+
+/** Lightweight trailer lookup (movie detail / swipe). */
+export function fetchMovieVideos(language, id, extraParams = {}) {
+  return getJson(
+    buildUrl(`/movie/${id}/videos`, language, {
+      include_video_language: 'en,tr,null',
+      ...extraParams,
+    }),
+  );
+}
+
+function mergeVideoResultsByKey(primary, secondary) {
+  const seen = new Set();
+  const out = [];
+  for (const v of [...(primary ?? []), ...(secondary ?? [])]) {
+    const k = v?.key;
+    if (typeof k !== 'string' || seen.has(k)) {
+      continue;
+    }
+    seen.add(k);
+    out.push(v);
+  }
+  return out;
+}
+
+/**
+ * Önce kullanıcı dili, sonra en-US — TMDB bazen dilde video listelemez.
+ * Paralel istek; birleşik listeden `pickBestYoutubeVideoKey` ile anahtar seçilir.
+ */
+export async function fetchMovieVideosForSwipe(locale, id) {
+  const [loc, en] = await Promise.all([
+    fetchMovieVideos(locale, id).catch(() => ({results: []})),
+    locale === 'en-US'
+      ? Promise.resolve({results: []})
+      : fetchMovieVideos('en-US', id).catch(() => ({results: []})),
+  ]);
+  return mergeVideoResultsByKey(loc.results, en.results);
+}
+
+const YT_VIDEO_TYPE_ORDER = [
+  'Trailer',
+  'Teaser',
+  'Clip',
+  'Featurette',
+  'Behind the Scenes',
+  'Bloopers',
+  'Opening Credits',
+  'Interview',
+  'Recap',
+];
+
+/** TMDB `videos.results` içinden oynatılabilir ilk YouTube `key`. */
+export function pickBestYoutubeVideoKey(results) {
+  const yt = (results ?? []).filter(
+    v =>
+      typeof v?.key === 'string' &&
+      /^[a-zA-Z0-9_-]{6,64}$/.test(v.key) &&
+      (v.site === 'YouTube' || String(v.site).toLowerCase() === 'youtube'),
+  );
+  if (!yt.length) {
+    return null;
+  }
+  const pickType = type => {
+    const cand = yt.filter(v => v.type === type);
+    if (!cand.length) {
+      return null;
+    }
+    cand.sort(
+      (a, b) =>
+        Number(Boolean(b.official)) - Number(Boolean(a.official)) ||
+        (b.size ?? 0) - (a.size ?? 0),
+    );
+    return cand[0].key;
+  };
+  for (const t of YT_VIDEO_TYPE_ORDER) {
+    const k = pickType(t);
+    if (k) {
+      return k;
+    }
+  }
+  const rest = yt.filter(v => !YT_VIDEO_TYPE_ORDER.includes(v.type));
+  if (rest.length) {
+    rest.sort(
+      (a, b) =>
+        Number(Boolean(b.official)) - Number(Boolean(a.official)) ||
+        (b.size ?? 0) - (a.size ?? 0),
+    );
+    return rest[0].key;
+  }
+  yt.sort((a, b) => (b.size ?? 0) - (a.size ?? 0));
+  return yt[0]?.key ?? null;
 }
 
 export function discoverMovies(language, params) {

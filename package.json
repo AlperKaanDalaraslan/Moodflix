@@ -6,7 +6,7 @@
     "android": "react-native run-android",
     "ios": "react-native run-ios",
     "lint": "eslint .",
-    "start": "react-native start",
+    "start": "node scripts/write-env-shim.js && react-native start",
     "test": "jest"
   },
   "dependencies": {
@@ -36,7 +36,6 @@
     "eslint": "^8.19.0",
     "jest": "^29.6.3",
     "prettier": "2.8.8",
-    "react-native-dotenv": "^3.4.11",
     "react-test-renderer": "19.2.3"
   },
   "engines": {

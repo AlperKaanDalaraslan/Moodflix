@@ -38,6 +38,7 @@ local.properties
 # Secrets (TMDB keys, tokens)
 .env
 .env.*.local
+shims/@env/index.js
 
 # node.js
 #

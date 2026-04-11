@@ -13,8 +13,11 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {
   fetchGenreList,
+  fetchNowPlaying,
+  fetchPopular,
   fetchTopRated,
   fetchTrendingMovies,
+  fetchUpcoming,
   hasApiKey,
 } from '../api/tmdbClient';
 import {PosterImage} from '../components/PosterImage';
@@ -29,7 +32,10 @@ export function HomeScreen() {
   const navigation = useNavigation();
 
   const [trending, setTrending] = useState([]);
+  const [popular, setPopular] = useState([]);
   const [topRated, setTopRated] = useState([]);
+  const [nowPlaying, setNowPlaying] = useState([]);
+  const [upcoming, setUpcoming] = useState([]);
   const [genres, setGenres] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -43,13 +49,19 @@ export function HomeScreen() {
     setLoading(true);
     setError(null);
     try {
-      const [tr, top, g] = await Promise.all([
+      const [tr, pop, top, now, up, g] = await Promise.all([
         fetchTrendingMovies(locale),
+        fetchPopular(locale, 1),
         fetchTopRated(locale, 1),
+        fetchNowPlaying(locale, 1),
+        fetchUpcoming(locale, 1),
         fetchGenreList(locale),
       ]);
       setTrending(tr.results.slice(0, 12));
+      setPopular(pop.results.slice(0, 12));
       setTopRated(top.results.slice(0, 12));
+      setNowPlaying(now.results.slice(0, 12));
+      setUpcoming(up.results.slice(0, 12));
       setGenres(g.genres.slice(0, 12));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'err');
@@ -94,7 +106,7 @@ export function HomeScreen() {
               {item.title}
             </Text>
             <Text style={{color: colors.textMuted, fontSize: 13, fontWeight: '600', marginTop: 2}}>
-              ★ {item.vote_average.toFixed(1)}
+              ★ {(Number(item.vote_average) || 0).toFixed(1)}
             </Text>
           </Pressable>
         )}
@@ -147,7 +159,10 @@ export function HomeScreen() {
           </TouchableOpacity>
 
           {renderRow(t(locale, 'trending'), trending)}
+          {renderRow(t(locale, 'popular'), popular)}
           {renderRow(t(locale, 'topRated'), topRated)}
+          {renderRow(t(locale, 'nowPlaying'), nowPlaying)}
+          {renderRow(t(locale, 'upcoming'), upcoming)}
 
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, {color: colors.text}]}>{t(locale, 'categories')}</Text>

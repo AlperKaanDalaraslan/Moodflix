@@ -3,7 +3,6 @@ import React, {useCallback, useEffect, useLayoutEffect, useState} from 'react';
 import {
   ActivityIndicator,
   FlatList,
-  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,6 +13,7 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {fetchMovieDetail, hasApiKey} from '../api/tmdbClient';
 import {PosterImage} from '../components/PosterImage';
+import {TrailerModal} from '../components/TrailerModal';
 import {useFavorites} from '../context/FavoritesContext';
 import {useSettings} from '../context/SettingsContext';
 import {t} from '../i18n/translations';
@@ -30,8 +30,13 @@ export function MovieDetailScreen() {
   const [movie, setMovie] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [trailerOpen, setTrailerOpen] = useState(false);
 
   const movieId = params?.movieId;
+
+  useEffect(() => {
+    setTrailerOpen(false);
+  }, [movieId]);
 
   const load = useCallback(async () => {
     if (!hasApiKey()) {
@@ -92,7 +97,7 @@ export function MovieDetailScreen() {
     if (!trailerKey) {
       return;
     }
-    void Linking.openURL(`https://www.youtube.com/watch?v=${trailerKey}`);
+    setTrailerOpen(true);
   };
 
   if (loading) {
@@ -123,6 +128,13 @@ export function MovieDetailScreen() {
 
   return (
     <SafeAreaView style={{flex: 1, backgroundColor: colors.background}} edges={['bottom']}>
+      <TrailerModal
+        visible={trailerOpen}
+        videoId={trailerKey}
+        onClose={() => setTrailerOpen(false)}
+        colors={colors}
+        locale={locale}
+      />
       <ScrollView contentContainerStyle={{paddingBottom: 24}} showsVerticalScrollIndicator={false}>
         <View style={{paddingHorizontal: 16, paddingTop: 8}}>
           <View

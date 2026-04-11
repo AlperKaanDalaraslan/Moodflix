@@ -10,7 +10,14 @@ const sizeToSegment = {
   backdrop: 'w780',
 };
 
-export function PosterImage({posterPath, colors, style, size = 'medium'}) {
+export function PosterImage({
+  posterPath,
+  colors,
+  style,
+  size = 'medium',
+  /** Kaydır kartı: poster başlığı kırpılmasın; yan/üst-alt siyah şerit olabilir */
+  resizeMode = 'cover',
+}) {
   const segment = sizeToSegment[size];
   const uri = posterPath ? `${TMDB_IMAGE_BASE}/${segment}${posterPath}` : null;
 
@@ -28,7 +35,7 @@ export function PosterImage({posterPath, colors, style, size = 'medium'}) {
         accessibilityIgnoresInvertColors
         source={{uri}}
         style={styles.image}
-        resizeMode="cover"
+        resizeMode={resizeMode}
       />
     </View>
   );

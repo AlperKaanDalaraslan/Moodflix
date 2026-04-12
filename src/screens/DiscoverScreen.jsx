@@ -114,7 +114,6 @@ export function DiscoverScreen() {
     <SafeAreaView style={[styles.safe, {backgroundColor: colors.background}]} edges={['top']}>
       <View style={styles.top}>
         <Text style={[styles.title, {color: colors.text}]}>{t(locale, 'discover')}</Text>
-        <Text style={{color: colors.textMuted, marginTop: 6}}>{t(locale, 'filters')}</Text>
       </View>
 
       {!hasApiKey() ? (

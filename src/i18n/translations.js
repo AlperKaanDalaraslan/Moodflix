@@ -63,7 +63,6 @@ export const translations = {
     writer: 'Writer',
     runtime: 'Runtime',
     minutes: 'min',
-    filters: 'Filters',
     allGenres: 'All genres',
   },
   'tr-TR': {
@@ -130,7 +129,6 @@ export const translations = {
     writer: 'Senarist',
     runtime: 'Süre',
     minutes: 'dk',
-    filters: 'Filtreler',
     allGenres: 'Tüm türler',
   },
 };

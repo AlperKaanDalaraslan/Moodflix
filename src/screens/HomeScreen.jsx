@@ -202,7 +202,9 @@ export function HomeScreen() {
             { borderColor: colors.border, backgroundColor: colors.surface },
           ]}
         >
-          <Text style={{ color: colors.text, fontWeight: '700' }}>Me</Text>
+          <Text style={{ color: colors.text, fontWeight: '700' }}>
+            {t(locale, 'profile')}
+          </Text>
         </TouchableOpacity>
       </View>
 

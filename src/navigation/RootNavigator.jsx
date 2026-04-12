@@ -88,6 +88,8 @@ function MainTabs() {
 
   return (
     <Tab.Navigator
+      /** Dil değişince sekmelerin etiketleri güncellensin (options önbelleği) */
+      key={locale}
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
@@ -221,8 +223,8 @@ export function RootNavigator() {
           component={MainTabs}
           options={{
             headerShown: false,
-            /** Önceki ekran başlığı kaynağı: rota adı yerine uygulama adı */
-            title: t(locale, 'appName'),
+            /** iOS geri etiketi: uygulama adı yerine «Ana sayfa» çevirisi (dil değişiminde belli olsun). */
+            title: t(locale, 'home'),
           }}
         />
         <Stack.Screen
@@ -235,11 +237,7 @@ export function RootNavigator() {
           component={CategoryListScreen}
           options={{title: ''}}
         />
-        <Stack.Screen
-          name="Profile"
-          component={ProfileScreen}
-          options={{title: t(locale, 'profile')}}
-        />
+        <Stack.Screen name="Profile" component={ProfileScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

@@ -6,6 +6,7 @@
     "android": "react-native run-android",
     "ios": "react-native run-ios",
     "lint": "eslint .",
+    "i18n:build": "node scripts/build-ui-i18n.mjs",
     "start": "node scripts/write-env-shim.js && react-native start",
     "test": "jest"
   },

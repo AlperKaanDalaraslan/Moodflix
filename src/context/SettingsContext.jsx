@@ -1,10 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, {createContext, useCallback, useContext, useEffect, useMemo, useState} from 'react';
+import {DEFAULT_CONTENT_LOCALE, isTmdbContentLocale} from '../i18n/contentLocales';
 
 const STORAGE_KEY = '@moodflix/settings';
 
 const defaultSettings = {
-  locale: 'tr-TR',
+  locale: DEFAULT_CONTENT_LOCALE,
   theme: 'dark',
 };
 
@@ -24,7 +25,9 @@ export function SettingsProvider({children}) {
         if (raw) {
           const parsed = JSON.parse(raw);
           setSettings({
-            locale: parsed.locale === 'en-US' ? 'en-US' : 'tr-TR',
+            locale: isTmdbContentLocale(parsed.locale)
+              ? parsed.locale
+              : DEFAULT_CONTENT_LOCALE,
             theme: parsed.theme === 'light' ? 'light' : 'dark',
           });
         }
@@ -37,9 +40,12 @@ export function SettingsProvider({children}) {
     };
   }, []);
 
-  const setLocale = useCallback(locale => {
+  const setLocale = useCallback(code => {
+    if (!isTmdbContentLocale(code)) {
+      return;
+    }
     setSettings(prev => {
-      const next = {...prev, locale};
+      const next = {...prev, locale: code};
       void AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(
         () => undefined,
       );

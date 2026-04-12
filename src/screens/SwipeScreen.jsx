@@ -24,7 +24,10 @@ import {
 import {
   fetchGenreList,
   fetchMovieVideosForSwipe,
+  fetchNowPlaying,
   fetchPopular,
+  fetchTopRated,
+  fetchUpcoming,
   hasApiKey,
   pickBestYoutubeVideoKey,
 } from '../api/tmdbClient';
@@ -35,6 +38,35 @@ import { useFavorites } from '../context/FavoritesContext';
 import { useSettings } from '../context/SettingsContext';
 import { t } from '../i18n/translations';
 import { getTheme } from '../theme/colors';
+
+/** Aynı sayfada hep aynı sırada gelmesin */
+function shuffleArray(items) {
+  const a = [...items];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+/**
+ * Tek kaynak (popular) + dar sayfa penceresi aynı filmleri tekrar ettirir; liste çeşitlensin diye
+ * popüler / en yüksek puan / vizyon / yakında arasında rastgele seçilir.
+ */
+async function fetchSwipeFeedPage(locale) {
+  const page = 1 + Math.floor(Math.random() * 22);
+  const r = Math.random();
+  if (r < 0.34) {
+    return fetchPopular(locale, page);
+  }
+  if (r < 0.58) {
+    return fetchTopRated(locale, page);
+  }
+  if (r < 0.8) {
+    return fetchNowPlaying(locale, page);
+  }
+  return fetchUpcoming(locale, page);
+}
 
 /**
  * Fragman var: özet yok → ince bilgi şeridi; kalan yükseklik videoda (coverZoom ile dolar).
@@ -102,7 +134,9 @@ function SwipeCard({
   trailerKey,
   trailerLoading,
   trailerModalOpen,
-  swipeScreenFocused,
+  showEmbed,
+  trailerSurfaceBusy,
+  onEmbedShellLoadEnd,
   metrics,
   onOpenTrailerModal,
   onResult,
@@ -142,27 +176,27 @@ function SwipeCard({
         },
         onPanResponderRelease: (_, g) => {
           const threshold = 110;
-          if (g.dx > threshold) {
+          const vx = g.vx ?? 0;
+          /** Hızlı fırlatma: dx eşiğe yetişmese bile sağ/sol kararını kaçırmayalım */
+          const passRight = g.dx > threshold || (g.dx > 52 && vx > 0.82);
+          const passLeft = g.dx < -threshold || (g.dx < -52 && vx < -0.82);
+          if (passRight) {
             Animated.spring(tx, {
               toValue: metrics.SWIPE_OUT,
               useNativeDriver: true,
               friction: 7,
               tension: 40,
-            }).start(({ finished }) => {
-              if (finished) {
-                onResult('right');
-              }
+            }).start(() => {
+              onResult('right', movie);
             });
-          } else if (g.dx < -threshold) {
+          } else if (passLeft) {
             Animated.spring(tx, {
               toValue: -metrics.SWIPE_OUT,
               useNativeDriver: true,
               friction: 7,
               tension: 40,
-            }).start(({ finished }) => {
-              if (finished) {
-                onResult('left');
-              }
+            }).start(() => {
+              onResult('left', movie);
             });
           } else {
             Animated.spring(tx, {
@@ -173,15 +207,12 @@ function SwipeCard({
           }
         },
       }),
-    [metrics.SWIPE_OUT, onResult, tx],
+    [metrics.SWIPE_OUT, movie, onResult, tx],
   );
 
   const year = movie.release_date ? movie.release_date.slice(0, 4) : null;
   const genres = genreLine(movie, genreById);
   const overview = (movie.overview ?? '').trim();
-
-  const showEmbed =
-    Boolean(trailerKey) && swipeScreenFocused && !trailerModalOpen;
 
   return (
     <Animated.View
@@ -207,36 +238,37 @@ function SwipeCard({
                 size="backdrop"
                 resizeMode="contain"
               />
-            ) : trailerLoading ? (
-              <View
-                style={[
-                  styles.videoLoading,
-                  { backgroundColor: colors.background },
-                ]}
-              >
-                <ActivityIndicator color={colors.primary} size="large" />
-              </View>
-            ) : showEmbed ? (
-              <YoutubeEmbed
-                key={`${movie.id}-${trailerKey}`}
-                videoId={trailerKey}
-                style={styles.embedInCard}
-                flexLayout
-                coverZoom
-                loop
-                autoPlay
-                cinemaMode
-                muted={false}
-                controls={false}
-                passThroughTouches
-              />
             ) : (
-              <PosterImage
-                posterPath={movie.poster_path}
-                colors={colors}
-                size="backdrop"
-                resizeMode="contain"
-              />
+              <View style={styles.mediaShellInner}>
+                {showEmbed ? (
+                  <YoutubeEmbed
+                    key={`${movie.id}-${trailerKey}`}
+                    videoId={trailerKey}
+                    style={styles.embedInCard}
+                    flexLayout
+                    coverZoom
+                    loop
+                    autoPlay
+                    cinemaMode
+                    muted={false}
+                    controls={false}
+                    passThroughTouches
+                    onShellLoadEnd={onEmbedShellLoadEnd}
+                  />
+                ) : !trailerSurfaceBusy ? (
+                  <PosterImage
+                    posterPath={movie.poster_path}
+                    colors={colors}
+                    size="backdrop"
+                    resizeMode="contain"
+                  />
+                ) : null}
+                {trailerSurfaceBusy ? (
+                  <View style={styles.videoLoadingOverlay} pointerEvents="none">
+                    <ActivityIndicator color={colors.primary} size="large" />
+                  </View>
+                ) : null}
+              </View>
             )}
           </View>
           <Animated.View
@@ -279,17 +311,12 @@ function SwipeCard({
             ★ {movie.vote_average.toFixed(1)}
           </Text>
           {trailerLoading ? (
-            <View
-              style={[
-                styles.trailerCheckingRow,
-                { borderColor: colors.border, backgroundColor: colors.surface },
-              ]}
+            <Text
+              numberOfLines={1}
+              style={[styles.trailerCheckingLine, { color: colors.textMuted }]}
             >
-              <ActivityIndicator size="small" color={colors.primary} />
-              <Text style={[styles.trailerCheckingText, { color: colors.textMuted }]}>
-                {t(locale, 'trailerChecking')}
-              </Text>
-            </View>
+              {t(locale, 'trailerChecking')}
+            </Text>
           ) : trailerKey ? (
             <TouchableOpacity
               onPress={onOpenTrailerModal}
@@ -338,12 +365,35 @@ export function SwipeScreen() {
   /** Bu `id` için fragman isteği bitti (sonuç null da olabilir) — ilk karede yanlış “kompakt” önlemek için */
   const [trailerFetchDoneId, setTrailerFetchDoneId] = useState(null);
   const [trailerModalOpen, setTrailerModalOpen] = useState(false);
+  /** WebView ilk karesi; TMDB beklerken de aynı üst overlay tek spinner kalsın */
+  const [embedShellReady, setEmbedShellReady] = useState(false);
   const [swipeScreenFocused, setSwipeScreenFocused] = useState(true);
   const isSwipeTabFocused = useIsFocused();
   /** `true` ile başla: ilk açılışta “yeniden odak” sanılmasın (tab bileşeni unmount olmaz). */
   const prevSwipeTabFocusedRef = useRef(true);
 
   const top = deck[0];
+
+  const showEmbed =
+    Boolean(trailerKey) && swipeScreenFocused && !trailerModalOpen;
+
+  useEffect(() => {
+    setEmbedShellReady(false);
+  }, [top?.id]);
+
+  useEffect(() => {
+    if (!swipeScreenFocused) {
+      setEmbedShellReady(true);
+    }
+  }, [swipeScreenFocused]);
+
+  const trailerSurfaceBusy =
+    trailerLoading || (showEmbed && !embedShellReady);
+
+  const onEmbedShellLoadEnd = useCallback(() => {
+    setEmbedShellReady(true);
+  }, []);
+
   const contentH = useMemo(() => {
     if (tabBodyH != null && tabBodyH > 1) {
       return tabBodyH;
@@ -365,7 +415,7 @@ export function SwipeScreen() {
         Boolean(top && (trailerKey || trailerLoading)),
         noTrailerKnown,
       ),
-    [contentH, top?.id, trailerKey, trailerLoading, noTrailerKnown, winW, insets.bottom],
+    [contentH, top, trailerKey, trailerLoading, noTrailerKnown, winW, insets.bottom],
   );
 
   const loadMore = useCallback(
@@ -382,13 +432,20 @@ export function SwipeScreen() {
       }
       setError(null);
       try {
-        const page = 1 + Math.floor(Math.random() * 8);
-        const res = await fetchPopular(locale, page);
-        const next = res.results.filter(m => m.poster_path);
+        let res = await fetchSwipeFeedPage(locale);
+        let next = shuffleArray((res.results ?? []).filter(m => m.poster_path));
+        if (next.length === 0) {
+          res = await fetchPopular(locale, 1 + Math.floor(Math.random() * 10));
+          next = shuffleArray((res.results ?? []).filter(m => m.poster_path));
+        }
         if (opts?.replace) {
           setDeck(next);
         } else {
-          setDeck(prev => [...prev, ...next]);
+          setDeck(prev => {
+            const seen = new Set(prev.map(m => m.id));
+            const fresh = next.filter(m => !seen.has(m.id));
+            return [...prev, ...fresh];
+          });
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : 'err');
@@ -486,14 +543,21 @@ export function SwipeScreen() {
   }, [top?.id]);
 
   const onSwipe = useCallback(
-    dir => {
-      if (!top) {
+    (dir, movie) => {
+      const m = movie ?? top;
+      if (!m) {
         return;
       }
-      if (dir === 'right' && !isFavorite(top.id)) {
-        toggleFavorite(top);
+      if (dir === 'right' && !isFavorite(m.id)) {
+        toggleFavorite(m);
       }
-      setDeck(d => d.slice(1));
+      setDeck(d => {
+        const head = d[0];
+        if (!head || Number(head.id) !== Number(m.id)) {
+          return d;
+        }
+        return d.slice(1);
+      });
     },
     [isFavorite, toggleFavorite, top],
   );
@@ -623,7 +687,9 @@ export function SwipeScreen() {
                 trailerKey={trailerKey}
                 trailerLoading={trailerLoading}
                 trailerModalOpen={trailerModalOpen}
-                swipeScreenFocused={swipeScreenFocused}
+                showEmbed={showEmbed}
+                trailerSurfaceBusy={trailerSurfaceBusy}
+                onEmbedShellLoadEnd={onEmbedShellLoadEnd}
                 metrics={metrics}
                 onOpenTrailerModal={() => setTrailerModalOpen(true)}
                 onResult={onSwipe}
@@ -637,7 +703,7 @@ export function SwipeScreen() {
               ]}
             >
               <TouchableOpacity
-                onPress={() => onSwipe('left')}
+                onPress={() => onSwipe('left', top)}
                 style={[
                   styles.circle,
                   {
@@ -657,7 +723,7 @@ export function SwipeScreen() {
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => onSwipe('right')}
+                onPress={() => onSwipe('right', top)}
                 style={[
                   styles.circle,
                   {
@@ -765,15 +831,29 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
     overflow: 'hidden',
   },
+  mediaShellInner: {
+    flex: 1,
+    width: '100%',
+    minHeight: 0,
+    position: 'relative',
+    backgroundColor: '#000',
+  },
+  videoLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#000',
+    zIndex: 4,
+  },
   embedInCard: {
     flex: 1,
     width: '100%',
     minHeight: 0,
   },
-  videoLoading: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
+  trailerCheckingLine: {
+    marginTop: 6,
+    fontSize: 12,
+    fontWeight: '600',
   },
   infoPanel: {
     paddingHorizontal: 14,
@@ -819,21 +899,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 11,
     paddingVertical: 6,
     borderRadius: 999,
-  },
-  trailerCheckingRow: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: StyleSheet.hairlineWidth,
-    gap: 8,
-  },
-  trailerCheckingText: {
-    fontSize: 12,
-    fontWeight: '700',
   },
   trailerBtnText: {
     fontSize: 13,

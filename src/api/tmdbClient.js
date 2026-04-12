@@ -2,6 +2,11 @@ import {TMDB_API_KEY} from '../config/tmdb';
 
 const BASE = 'https://api.themoviedb.org/3';
 
+function regionFromLanguageTag(language) {
+  const m = /^[a-z]{2,3}-([A-Z]{2})$/i.exec(String(language ?? ''));
+  return m ? m[1].toUpperCase() : null;
+}
+
 function buildUrl(path, language, params = {}) {
   const key = TMDB_API_KEY.trim();
   if (!key) {
@@ -10,6 +15,10 @@ function buildUrl(path, language, params = {}) {
   const u = new URL(`${BASE}${path}`);
   u.searchParams.set('api_key', key);
   u.searchParams.set('language', language);
+  const region = regionFromLanguageTag(language);
+  if (region) {
+    u.searchParams.set('region', region);
+  }
   for (const [k, v] of Object.entries(params)) {
     if (v === undefined || v === '') {
       continue;
@@ -194,9 +203,16 @@ export function fetchMovieDetail(language, id) {
 
 /** Lightweight trailer lookup (movie detail / swipe). */
 export function fetchMovieVideos(language, id, extraParams = {}) {
+  const primary = String(language ?? 'en')
+    .split('-')[0]
+    .toLowerCase()
+    .replace(/[^a-z]/g, '');
+  const include = ['en', 'tr', primary || 'en', 'null'].filter(
+    (v, i, a) => a.indexOf(v) === i,
+  );
   return getJson(
     buildUrl(`/movie/${id}/videos`, language, {
-      include_video_language: 'en,tr,null',
+      include_video_language: include.join(','),
       ...extraParams,
     }),
   );
@@ -221,9 +237,10 @@ function mergeVideoResultsByKey(primary, secondary) {
  * Paralel istek; birleşik listeden `pickBestYoutubeVideoKey` ile anahtar seçilir.
  */
 export async function fetchMovieVideosForSwipe(locale, id) {
+  const skipEnFallback = /^en\b/i.test(String(locale ?? ''));
   const [loc, en] = await Promise.all([
     fetchMovieVideos(locale, id).catch(() => ({results: []})),
-    locale === 'en-US'
+    skipEnFallback
       ? Promise.resolve({results: []})
       : fetchMovieVideos('en-US', id).catch(() => ({results: []})),
   ]);

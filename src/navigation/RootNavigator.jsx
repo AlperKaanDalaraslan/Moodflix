@@ -2,12 +2,13 @@ import {NavigationContainer, DarkTheme, DefaultTheme} from '@react-navigation/na
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import React, {useMemo} from 'react';
-import {StyleSheet, Text, View} from 'react-native';
+import {Platform, StyleSheet, Text, View} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useSettings} from '../context/SettingsContext';
 import {t} from '../i18n/translations';
 import {getTheme} from '../theme/colors';
 import {shadow} from '../theme/shadows';
+import {CategoryListScreen} from '../screens/CategoryListScreen';
 import {DiscoverScreen} from '../screens/DiscoverScreen';
 import {FavoritesScreen} from '../screens/FavoritesScreen';
 import {HomeScreen} from '../screens/HomeScreen';
@@ -25,15 +26,60 @@ function TabLabel({focused, label, colors}) {
       numberOfLines={1}
       style={{
         fontSize: 11,
-        fontWeight: focused ? '700' : '500',
+        fontWeight: focused ? '800' : '600',
         color: focused ? colors.primary : colors.textMuted,
-        marginTop: 2,
-        letterSpacing: focused ? -0.1 : 0,
+        marginTop: 4,
+        letterSpacing: focused ? -0.15 : -0.05,
+        opacity: focused ? 1 : 0.92,
       }}>
       {label}
     </Text>
   );
 }
+
+/** Tüm sekmelerde aynı boyut / hizalı ikon; aktif: sarı + hafif zemin */
+function TabGlyph({focused, theme, colors, children}) {
+  const pill =
+    focused && theme === 'dark'
+      ? 'rgba(245, 197, 24, 0.18)'
+      : focused && theme === 'light'
+        ? 'rgba(230, 172, 0, 0.24)'
+        : 'transparent';
+
+  return (
+    <View style={[tabGlyphStyles.holder, {backgroundColor: pill}]}>
+      <Text
+        allowFontScaling={false}
+        style={[
+          tabGlyphStyles.glyph,
+          {
+            color: focused ? colors.primary : colors.text,
+            opacity: focused ? 1 : 0.42,
+            fontWeight: focused ? '900' : '700',
+          },
+        ]}>
+        {children}
+      </Text>
+    </View>
+  );
+}
+
+const tabGlyphStyles = StyleSheet.create({
+  holder: {
+    minWidth: 44,
+    height: 34,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 0,
+  },
+  glyph: {
+    fontSize: 20,
+    lineHeight: Platform.OS === 'android' ? 24 : 22,
+    textAlign: 'center',
+    includeFontPadding: false,
+  },
+});
 
 function MainTabs() {
   const {locale, theme} = useSettings();
@@ -48,31 +94,26 @@ function MainTabs() {
           backgroundColor: colors.background,
           borderTopWidth: StyleSheet.hairlineWidth,
           borderTopColor: colors.border,
-          height: 58 + insets.bottom,
+          height: 62 + insets.bottom,
           paddingBottom: Math.max(insets.bottom, 8),
-          paddingTop: 6,
+          paddingTop: 8,
           ...shadow.tabBar,
         },
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
+        tabBarItemStyle: {paddingVertical: 2},
       }}>
       <Tab.Screen
         name="Home"
         component={HomeScreen}
         options={{
           tabBarLabel: ({focused}) => (
-            <TabLabel focused={focused} label={t(locale, 'home')} colors={colors} />
+            <TabLabel focused={focused} label={t(locale, 'appName')} colors={colors} />
           ),
           tabBarIcon: ({focused}) => (
-            <View
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: 4,
-                backgroundColor: focused ? colors.primary : 'transparent',
-                marginBottom: -2,
-              }}
-            />
+            <TabGlyph focused={focused} theme={theme} colors={colors}>
+              ⌂
+            </TabGlyph>
           ),
         }}
       />
@@ -88,15 +129,9 @@ function MainTabs() {
             />
           ),
           tabBarIcon: ({focused}) => (
-            <View
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: 4,
-                backgroundColor: focused ? colors.primary : 'transparent',
-                marginBottom: -2,
-              }}
-            />
+            <TabGlyph focused={focused} theme={theme} colors={colors}>
+              ✦
+            </TabGlyph>
           ),
         }}
       />
@@ -108,17 +143,9 @@ function MainTabs() {
             <TabLabel focused={focused} label={t(locale, 'swipe')} colors={colors} />
           ),
           tabBarIcon: ({focused}) => (
-            <View
-              style={{
-                paddingHorizontal: 10,
-                paddingVertical: 4,
-                borderRadius: 999,
-                backgroundColor: focused ? colors.primary : colors.surfaceElevated,
-              }}>
-              <Text style={{fontWeight: '800', color: focused ? colors.onPrimary : colors.text}}>
-                ⇄
-              </Text>
-            </View>
+            <TabGlyph focused={focused} theme={theme} colors={colors}>
+              ⇄
+            </TabGlyph>
           ),
         }}
       />
@@ -130,15 +157,9 @@ function MainTabs() {
             <TabLabel focused={focused} label={t(locale, 'search')} colors={colors} />
           ),
           tabBarIcon: ({focused}) => (
-            <View
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: 4,
-                backgroundColor: focused ? colors.primary : 'transparent',
-                marginBottom: -2,
-              }}
-            />
+            <TabGlyph focused={focused} theme={theme} colors={colors}>
+              ⊙
+            </TabGlyph>
           ),
         }}
       />
@@ -154,9 +175,9 @@ function MainTabs() {
             />
           ),
           tabBarIcon: ({focused}) => (
-            <Text style={{fontSize: 16, color: focused ? colors.primary : colors.textMuted}}>
+            <TabGlyph focused={focused} theme={theme} colors={colors}>
               ♥
-            </Text>
+            </TabGlyph>
           ),
         }}
       />
@@ -190,17 +211,28 @@ export function RootNavigator() {
         screenOptions={{
           headerStyle: {backgroundColor: colors.surface},
           headerTintColor: colors.text,
-          headerTitleStyle: {color: colors.text},
+          headerTitleStyle: {color: colors.text, fontWeight: '800', fontSize: 17},
+          /** iOS’ta geri yanında uzun başlık istemiyorsak */
+          headerBackTitleVisible: false,
           contentStyle: {backgroundColor: colors.background},
         }}>
         <Stack.Screen
-          name="MainTabs"
+          name="Root"
           component={MainTabs}
-          options={{headerShown: false}}
+          options={{
+            headerShown: false,
+            /** Önceki ekran başlığı kaynağı: rota adı yerine uygulama adı */
+            title: t(locale, 'appName'),
+          }}
         />
         <Stack.Screen
           name="MovieDetail"
           component={MovieDetailScreen}
+          options={{title: ''}}
+        />
+        <Stack.Screen
+          name="CategoryList"
+          component={CategoryListScreen}
           options={{title: ''}}
         />
         <Stack.Screen

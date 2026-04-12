@@ -32,8 +32,130 @@ export function hasApiKey() {
   return TMDB_API_KEY.trim().length > 0;
 }
 
-export function fetchTrendingMovies(language) {
-  return getJson(buildUrl('/trending/movie/week', language));
+export function fetchTrendingMovies(language, page = 1) {
+  return getJson(buildUrl('/trending/movie/week', language, {page}));
+}
+
+function isoAddDays(isoDate, deltaDays) {
+  const [y, m, d] = isoDate.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + deltaDays);
+  return dt.toISOString().slice(0, 10);
+}
+
+function todayIsoUtc() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * Ana sayfa satırları: varsayılan TMDB listeleri veya filtre/sıralama ile discover.
+ * @param {string} language
+ * @param {'trending'|'popular'|'topRated'|'nowPlaying'|'upcoming'} categoryId
+ * @param {number} page
+ * @param {{sort?: 'default'|'popularity'|'vote_average'|'release_date', minVote?: number, genreId?: number|null}} [opts]
+ */
+export function fetchCategoryBrowse(language, categoryId, page, opts = {}) {
+  const sort = opts.sort ?? 'default';
+  const minVote = Number(opts.minVote) || 0;
+  const genreRaw = opts.genreId;
+  const genreId =
+    genreRaw != null && genreRaw !== '' && Number.isFinite(Number(genreRaw)) && Number(genreRaw) > 0
+      ? Number(genreRaw)
+      : null;
+  const useDiscover = sort !== 'default' || minVote > 0 || genreId != null;
+
+  if (!useDiscover) {
+    switch (categoryId) {
+      case 'trending':
+        return fetchTrendingMovies(language, page);
+      case 'popular':
+        return fetchPopular(language, page);
+      case 'topRated':
+        return fetchTopRated(language, page);
+      case 'nowPlaying':
+        return fetchNowPlaying(language, page);
+      case 'upcoming':
+        return fetchUpcoming(language, page);
+      default:
+        throw new Error(`Unknown category: ${categoryId}`);
+    }
+  }
+
+  const today = todayIsoUtc();
+  const sortByExplicit = {
+    popularity: 'popularity.desc',
+    vote_average: 'vote_average.desc',
+    release_date: 'primary_release_date.desc',
+  };
+  const voteGte = minVote > 0 ? minVote : undefined;
+
+  /** @type {Record<string, string|number>} */
+  const d = {page};
+
+  switch (categoryId) {
+    case 'trending': {
+      d.sort_by = sort === 'default' ? 'popularity.desc' : sortByExplicit[sort] ?? 'popularity.desc';
+      if (voteGte !== undefined) {
+        d['vote_average.gte'] = voteGte;
+      }
+      if (voteGte !== undefined || sort === 'vote_average') {
+        d['vote_count.gte'] = 120;
+      }
+      break;
+    }
+    case 'popular': {
+      d.sort_by = sort === 'default' ? 'popularity.desc' : sortByExplicit[sort] ?? 'popularity.desc';
+      if (voteGte !== undefined) {
+        d['vote_average.gte'] = voteGte;
+      }
+      if (voteGte !== undefined || sort === 'vote_average') {
+        d['vote_count.gte'] = 80;
+      }
+      break;
+    }
+    case 'topRated': {
+      d.sort_by = sort === 'default' ? 'vote_average.desc' : sortByExplicit[sort] ?? 'vote_average.desc';
+      d['vote_count.gte'] = 200;
+      if (voteGte !== undefined) {
+        d['vote_average.gte'] = voteGte;
+      }
+      break;
+    }
+    case 'nowPlaying': {
+      d.sort_by = sort === 'default' ? 'popularity.desc' : sortByExplicit[sort] ?? 'popularity.desc';
+      d['primary_release_date.lte'] = today;
+      d['primary_release_date.gte'] = isoAddDays(today, -150);
+      d.with_release_type = '2|3';
+      if (voteGte !== undefined) {
+        d['vote_average.gte'] = voteGte;
+      }
+      break;
+    }
+    case 'upcoming': {
+      const horizon = isoAddDays(today, 730);
+      d['primary_release_date.gte'] = today;
+      d['primary_release_date.lte'] = horizon;
+      if (sort === 'default') {
+        d.sort_by = 'primary_release_date.asc';
+      } else if (sort === 'release_date') {
+        d.sort_by = 'primary_release_date.desc';
+      } else {
+        d.sort_by = sortByExplicit[sort] ?? 'primary_release_date.asc';
+      }
+      if (voteGte !== undefined) {
+        d['vote_average.gte'] = voteGte;
+      }
+      break;
+    }
+    default:
+      throw new Error(`Unknown category: ${categoryId}`);
+  }
+
+  if (genreId != null) {
+    d.with_genres = String(genreId);
+  }
+
+  return discoverMovies(language, d);
 }
 
 export function fetchTopRated(language, page = 1) {
@@ -178,6 +300,12 @@ export function discoverMovies(language, params) {
   }
   if (params['vote_average.gte'] !== undefined) {
     flat['vote_average.gte'] = params['vote_average.gte'];
+  }
+  if (params['vote_count.gte'] !== undefined) {
+    flat['vote_count.gte'] = params['vote_count.gte'];
+  }
+  if (params.with_release_type) {
+    flat.with_release_type = params.with_release_type;
   }
   return getJson(buildUrl('/discover/movie', language, flat));
 }

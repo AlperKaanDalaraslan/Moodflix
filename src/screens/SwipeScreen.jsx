@@ -1,4 +1,4 @@
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import React, {
   useCallback,
   useEffect,
@@ -339,6 +339,9 @@ export function SwipeScreen() {
   const [trailerFetchDoneId, setTrailerFetchDoneId] = useState(null);
   const [trailerModalOpen, setTrailerModalOpen] = useState(false);
   const [swipeScreenFocused, setSwipeScreenFocused] = useState(true);
+  const isSwipeTabFocused = useIsFocused();
+  /** `true` ile başla: ilk açılışta “yeniden odak” sanılmasın (tab bileşeni unmount olmaz). */
+  const prevSwipeTabFocusedRef = useRef(true);
 
   const top = deck[0];
   const contentH = useMemo(() => {
@@ -365,15 +368,6 @@ export function SwipeScreen() {
     [contentH, top?.id, trailerKey, trailerLoading, noTrailerKnown, winW, insets.bottom],
   );
 
-  useFocusEffect(
-    useCallback(() => {
-      setSwipeScreenFocused(true);
-      return () => {
-        setSwipeScreenFocused(false);
-      };
-    }, []),
-  );
-
   const loadMore = useCallback(
     async opts => {
       if (!hasApiKey()) {
@@ -391,7 +385,11 @@ export function SwipeScreen() {
         const page = 1 + Math.floor(Math.random() * 8);
         const res = await fetchPopular(locale, page);
         const next = res.results.filter(m => m.poster_path);
-        setDeck(prev => [...prev, ...next]);
+        if (opts?.replace) {
+          setDeck(next);
+        } else {
+          setDeck(prev => [...prev, ...next]);
+        }
       } catch (e) {
         setError(e instanceof Error ? e.message : 'err');
       } finally {
@@ -402,6 +400,23 @@ export function SwipeScreen() {
     },
     [locale],
   );
+
+  useFocusEffect(
+    useCallback(() => {
+      setSwipeScreenFocused(true);
+      return () => {
+        setSwipeScreenFocused(false);
+      };
+    }, []),
+  );
+
+  useEffect(() => {
+    const wasFocused = prevSwipeTabFocusedRef.current;
+    prevSwipeTabFocusedRef.current = isSwipeTabFocused;
+    if (isSwipeTabFocused && !wasFocused) {
+      void loadMore({ replace: true });
+    }
+  }, [isSwipeTabFocused, loadMore]);
 
   useEffect(() => {
     void loadMore();

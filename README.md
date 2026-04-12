@@ -1,97 +1,114 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# Moodflix
 
-# Getting Started
+**Moodflix**, ruh haline göre film keşfetmeni sağlayan bir **React Native** uygulamasıdır. [The Movie Database (TMDB)](https://www.themoviedb.org/) API’si ile gerçek zamanlı listeler, detaylar ve fragmanlar sunar; arayüz metinleri içerik diline göre yerelleştirilir, açık ve koyu tema desteklenir.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+## Ne iş yapar?
 
-## Step 1: Start Metro
+- **Ana sayfa:** Haftanın trendleri, popüler, en yüksek puan, vizyondakiler, yakında gelecekler ve türe göre hızlı giriş noktaları.
+- **Keşfet (Discover):** Birden fazla “ruh hali” (mutlu, melankolik, gerilim vb.) TMDB türleriyle eşlenir; yıl aralığı, minimum puan ve tür seçimiyle kişiselleştirilmiş öneri akışı üretir.
+- **Kaydır (Swipe):** Kart tabanlı keşif; popüler / top rated / vizyon / yakında kaynakları karıştırarak tekrarı azaltır, varsa fragman ve özetle zengin kart deneyimi.
+- **Ara:** TMDB üzerinden film araması.
+- **Favoriler:** Seçtiğin filmler cihazda saklanır (AsyncStorage).
+- **Film detayı:** Özet, puan, süre; fragman modalı; favoriye ekleme.
+- **Profil:** İçerik dili (TMDB dil kodları), tema ve uygulamadaki **Premium** giriş noktası (şu an bilgilendirme / yer tutucu; aşağıdaki gelir modeliyle genişletilebilir).
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+Özetle: “Bugün ne izlesem?” sorusunu ruh haline ve filtrelere bağlayan, hızlı ve görsel bir film keşif uygulaması.
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+## Teknik özet
 
-```sh
-# Using npm
-npm start
+| Alan | Seçim |
+|------|--------|
+| Çatı | React Native 0.85, React 19 |
+| Navigasyon | React Navigation (tab + stack) |
+| Veri | TMDB REST (`src/api/tmdbClient.js`) |
+| Yerel depolama | AsyncStorage (ayarlar, favoriler) |
+| Animasyon | Reanimated |
+| Çok dillilik | TMDB içerik yereline bağlı UI paketleri (`src/i18n/`) |
 
-# OR using Yarn
-yarn start
-```
+## Kurulum
 
-## Step 2: Build and run your app
+**Gereksinimler:** Node.js **≥ 22.11** (bkz. `package.json`), Xcode / Android Studio ve TMDB hesabı.
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
+1. Depoyu klonla ve bağımlılıkları kur:
 
-### Android
+   ```sh
+   npm install
+   ```
 
-```sh
-# Using npm
-npm run android
+2. Ortam değişkeni: kökte `.env.example` dosyasını `.env` olarak kopyala ve [TMDB API anahtarını](https://www.themoviedb.org/settings/api) ekle:
 
-# OR using Yarn
-yarn android
-```
+   ```sh
+   cp .env.example .env
+   # .env içinde TMDB_API_KEY=...
+   ```
 
-### iOS
+   Metro, `scripts/write-env-shim.js` ile `@env` shim’ini üretir; `.env` dosyasını repoya **commit etme**.
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+3. Metro:
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
+   ```sh
+   npm start
+   ```
 
-```sh
-bundle install
-```
+4. **iOS:** (ilk sefer ve native bağımlılık güncellemelerinde)
 
-Then, and every time you update your native dependencies, run:
+   ```sh
+   bundle install
+   bundle exec pod install
+   npm run ios
+   ```
 
-```sh
-bundle exec pod install
-```
+5. **Android:**
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+   ```sh
+   npm run android
+   ```
 
-```sh
-# Using npm
-npm run ios
+Diğer: `npm run lint`, `npm test`, çeviri paketleri için `npm run i18n:build`.
 
-# OR using Yarn
-yarn ios
-```
+---
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+## Premium ve gelir modeli (ürün / yatırımcı notu)
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+Aşağıdaki başlıklar, mevcut özellik setinin **doğal uzantıları** olarak hem kullanıcı değeri hem de gelir oluşturur. Profil ekranındaki Premium alanı bu vizyonla uyumludur; ödeme altyapısı (StoreKit, Google Play Billing, RevenueCat vb.) ayrıca entegre edilir.
 
-## Step 3: Modify your app
+### Ücretsiz çekirdek (bugünkü değer)
 
-Now that you have successfully run the app, let's make changes!
+- Temel listeler, arama, favoriler (cihaz içi), tek cihazda sınırsız gezinme mantığı.
+- Keşfet ve Swipe ile “ruh haline yakın” keşif.
 
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
+### Premium’da paraya dönüşen fırsatlar
 
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
+1. **Gelişmiş keşif ve kayıtlı profiller**  
+   Keşfet ekranındaki tür / yıl / puan kombinasyonlarını “Profilim: hafta sonu”, “Çift filmi” gibi **kaydedilmiş preset** olarak saklamak; ücretsiz kullanıcıda 1–2 preset, Premium’da sınırsız veya senkron.
 
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
+2. **Bulut senkron ve çok cihaz**  
+   Favoriler ve preset’lerin hesaba bağlanması (giriş + backend). Ücretsiz: sadece cihaz; Premium: yedek + cihazlar arası senkron — abonelik gerekçesi güçlü.
 
-## Congratulations! :tada:
+3. **Swipe ve keşif limiti + reklamsız**  
+   Günlük swipe veya “yeni öneri yenileme” sayısı; reklam gösterimi ücretsiz katmanda. Premium: **reklamsız**, daha yüksek veya sınırsız günlük kart.
 
-You've successfully run and modified your React Native App. :partying_face:
+4. **“Nerede izlenir?” ve ortaklık geliri**  
+   Film detayında bölgeye göre yayın platformları (JustWatch benzeri API veya manuel mapping) + **affiliate** linkleri; Premium kullanıcıya öne çıkan rozet veya erken erişim listesi.
 
-### Now what?
+5. **Erken erişim ve içerik paketleri**  
+   Yeni ruh hali paketleri, özel listeler (ör. festival seçkisi), tema paketleri — tek seferlik IAP veya abonelik katmanı.
 
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
+6. **B2B / marka**  
+   “Ruh haline göre haftalık seçki” widget’ı veya lisanslı beyaz etiket; kurumsal kampanyalar için API anahtarı / özel tema.
 
-# Troubleshooting
+### Fiyatlandırma önerisi (örnek)
 
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
+- Aylık / yıllık abonelik (en yüksek LTV): senkron + reklamsız + preset.  
+- Tek seferlik “Yaşam boyu” veya “Pro sezon” IAP: tema + preset paketi.  
+- Reklam (AdMob vb.) + freemium limit: dönüşüm hunisini besler.
 
-# Learn More
+Bu bölüm README’nin bir parçası olarak yatırımcıya veya ekip arkadaşına “**neden bu repo para kazanabilir**” sorusuna kısa cevap verir; teknik detay kodda, iş modeli burada netleşir.
 
-To learn more about React Native, take a look at the following resources:
+## Lisans ve veri
 
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+Film verileri ve görseller TMDB koşullarına tabidir; ticari kullanımda [TMDB API ve marka kurallarını](https://www.themoviedb.org/documentation/api) kontrol et.
+
+---
+
+*Varsayılan React Native şablon metinleri bu dosyadan çıkarılmıştır; ortam kurulumu için resmi [React Native ortam rehberi](https://reactnative.dev/docs/set-up-your-environment) yedek kaynak olarak kullanılabilir.*

@@ -79,6 +79,7 @@ const WEBVIEW_UA = Platform.select({
  * @param {boolean} cinemaMode — Fragman modu: daha az YouTube kromu (cc_load_policy, scrubber rengi).
  * @param {boolean} coverZoom — Kaydır kartı: iframe hafif büyütülür, iç letterbox azalır (taşan kırpılır).
  * @param {boolean} loop — Bittiğinde YouTube son ekranında kalmaması için (playlist=aynı id gerekir).
+ * @param {() => void} onShellLoadEnd — Kaydır kartı: ebeveyn tek spinner göstersin diye WebView yüklendiğinde (veya hata).
  */
 export function YoutubeEmbed({
   videoId,
@@ -91,6 +92,7 @@ export function YoutubeEmbed({
   cinemaMode = false,
   coverZoom = false,
   loop = false,
+  onShellLoadEnd,
 }) {
   const safeId = sanitizeVideoId(videoId);
   const html = useMemo(() => {
@@ -105,6 +107,7 @@ export function YoutubeEmbed({
   }
 
   const webStyle = flexLayout ? styles.webFlex : styles.web;
+  const hideWebViewSpinner = Boolean(onShellLoadEnd);
 
   return (
     <View
@@ -114,12 +117,22 @@ export function YoutubeEmbed({
       <WebView
         source={{html, baseUrl: 'https://www.youtube-nocookie.com'}}
         style={webStyle}
-        startInLoadingState
-        renderLoading={() => (
-          <View style={styles.loadingWrap}>
-            <ActivityIndicator color="#888" size="large" />
-          </View>
-        )}
+        startInLoadingState={!hideWebViewSpinner}
+        renderLoading={
+          hideWebViewSpinner
+            ? undefined
+            : () => (
+                <View style={styles.loadingWrap}>
+                  <ActivityIndicator color="#888" size="large" />
+                </View>
+              )
+        }
+        onLoadEnd={() => {
+          onShellLoadEnd?.();
+        }}
+        onError={() => {
+          onShellLoadEnd?.();
+        }}
         userAgent={WEBVIEW_UA}
         allowsInlineMediaPlayback
         mediaPlaybackRequiresUserAction={false}
@@ -167,5 +180,6 @@ const styles = StyleSheet.create({
   touchShield: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'transparent',
+    zIndex: 3,
   },
 });

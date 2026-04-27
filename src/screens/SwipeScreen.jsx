@@ -1,4 +1,8 @@
-import { useFocusEffect, useIsFocused } from '@react-navigation/native';
+import {
+  useFocusEffect,
+  useIsFocused,
+  useNavigation,
+} from '@react-navigation/native';
 import React, {
   useCallback,
   useEffect,
@@ -34,10 +38,12 @@ import {
 import { PosterImage } from '../components/PosterImage';
 import { TrailerModal } from '../components/TrailerModal';
 import { YoutubeEmbed } from '../components/YoutubeEmbed';
+import { useAuth } from '../context/AuthContext';
 import { useFavorites } from '../context/FavoritesContext';
 import { useSettings } from '../context/SettingsContext';
 import { t } from '../i18n/translations';
 import { getTheme } from '../theme/colors';
+import { showLoginRequiredAlert } from '../utils/authGate';
 
 /** Aynı sayfada hep aynı sırada gelmesin */
 function shuffleArray(items) {
@@ -348,10 +354,12 @@ function SwipeCard({
 }
 
 export function SwipeScreen() {
+  const navigation = useNavigation();
   const { locale, theme } = useSettings();
   const colors = getTheme(theme);
   const insets = useSafeAreaInsets();
   const { width: winW, height: winH } = useWindowDimensions();
+  const { hydrated, isLoggedIn } = useAuth();
   const { toggleFavorite, isFavorite } = useFavorites();
   /** Tab sahnesi gerçek yüksekliği (`useWindowDimensions` tab bar hariç değil) */
   const [tabBodyH, setTabBodyH] = useState(null);
@@ -548,8 +556,14 @@ export function SwipeScreen() {
       if (!m) {
         return;
       }
-      if (dir === 'right' && !isFavorite(m.id)) {
-        toggleFavorite(m);
+      if (dir === 'right') {
+        if (!hydrated || !isLoggedIn) {
+          showLoginRequiredAlert(navigation, locale);
+          return;
+        }
+        if (!isFavorite(m.id)) {
+          toggleFavorite(m);
+        }
       }
       setDeck(d => {
         const head = d[0];
@@ -559,7 +573,7 @@ export function SwipeScreen() {
         return d.slice(1);
       });
     },
-    [isFavorite, toggleFavorite, top],
+    [hydrated, isLoggedIn, isFavorite, locale, navigation, toggleFavorite, top],
   );
 
   useEffect(() => {

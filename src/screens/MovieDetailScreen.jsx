@@ -1,5 +1,5 @@
 import {useNavigation, useRoute} from '@react-navigation/native';
-import React, {useCallback, useEffect, useLayoutEffect, useState} from 'react';
+import React, {useCallback, useEffect, useLayoutEffect, useMemo, useState} from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -14,18 +14,24 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import {fetchMovieDetail, hasApiKey} from '../api/tmdbClient';
 import {PosterImage} from '../components/PosterImage';
 import {TrailerModal} from '../components/TrailerModal';
+import {useAuth} from '../context/AuthContext';
 import {useFavorites} from '../context/FavoritesContext';
+import {useProfile} from '../context/ProfileContext';
 import {useSettings} from '../context/SettingsContext';
 import {t} from '../i18n/translations';
 import {getTheme} from '../theme/colors';
 import {shadow} from '../theme/shadows';
+import {showLoginRequiredAlert} from '../utils/authGate';
+import {genreNamesFromMovie} from '../utils/profileMovie';
 
 export function MovieDetailScreen() {
   const {params} = useRoute();
   const navigation = useNavigation();
   const {locale, theme} = useSettings();
   const colors = getTheme(theme);
+  const {hydrated, isLoggedIn} = useAuth();
   const {toggleFavorite, isFavorite} = useFavorites();
+  const {isLikedId, isWatchedId, addLiked, removeLiked, addWatched, removeWatched} = useProfile();
 
   const [movie, setMovie] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -67,12 +73,22 @@ export function MovieDetailScreen() {
 
   const fav = movie ? isFavorite(movie.id) : false;
 
+  const onToggleFavorite = useCallback(() => {
+    if (!movie) {
+      return;
+    }
+    const ok = toggleFavorite(movie);
+    if (!ok) {
+      showLoginRequiredAlert(navigation, locale);
+    }
+  }, [movie, toggleFavorite, navigation, locale]);
+
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: movie
         ? () => (
             <TouchableOpacity
-              onPress={() => toggleFavorite(movie)}
+              onPress={onToggleFavorite}
               style={{paddingHorizontal: 12, paddingVertical: 8}}>
               <Text style={{color: fav ? colors.primary : colors.text, fontSize: 18}}>
                 {fav ? '♥' : '♡'}
@@ -81,7 +97,7 @@ export function MovieDetailScreen() {
           )
         : undefined,
     });
-  }, [colors.primary, colors.text, fav, movie, navigation, toggleFavorite]);
+  }, [colors.primary, colors.text, fav, movie, navigation, onToggleFavorite]);
 
   const trailerKey = movie?.videos?.results?.find(
     v => v.site === 'YouTube' && (v.type === 'Trailer' || v.type === 'Teaser'),
@@ -99,6 +115,32 @@ export function MovieDetailScreen() {
     }
     setTrailerOpen(true);
   };
+
+  const genreNames = useMemo(() => (movie ? genreNamesFromMovie(movie) : []), [movie]);
+
+  const onToggleLiked = useCallback(() => {
+    if (!movie) {
+      return;
+    }
+    if (!hydrated || !isLoggedIn) {
+      showLoginRequiredAlert(navigation, locale);
+      return;
+    }
+    const liked = isLikedId(movie.id);
+    void (liked ? removeLiked(movie.id) : addLiked(movie, genreNames)).catch(() => undefined);
+  }, [movie, hydrated, isLoggedIn, navigation, locale, isLikedId, removeLiked, addLiked, genreNames]);
+
+  const onMarkWatched = useCallback(() => {
+    if (!movie) {
+      return;
+    }
+    if (!hydrated || !isLoggedIn) {
+      showLoginRequiredAlert(navigation, locale);
+      return;
+    }
+    const watched = isWatchedId(movie.id);
+    void (watched ? removeWatched(movie.id) : addWatched(movie, genreNames)).catch(() => undefined);
+  }, [movie, hydrated, isLoggedIn, navigation, locale, isWatchedId, removeWatched, addWatched, genreNames]);
 
   if (loading) {
     return (
@@ -170,6 +212,43 @@ export function MovieDetailScreen() {
             ))}
           </View>
 
+          <View style={styles.actionRow}>
+            <TouchableOpacity
+              onPress={onToggleLiked}
+              activeOpacity={0.88}
+              style={[
+                styles.pillBtn,
+                {
+                  borderColor: colors.primary,
+                  backgroundColor: isLikedId(movie.id) ? colors.primary : colors.surfaceElevated,
+                },
+              ]}>
+              <Text
+                style={{
+                  color: isLikedId(movie.id) ? colors.onPrimary : colors.primary,
+                  fontWeight: '800',
+                  fontSize: 15,
+                }}>
+                {isLikedId(movie.id) ? t(locale, 'profileBtnLiked') : t(locale, 'profileBtnLike')}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={onMarkWatched}
+              activeOpacity={0.88}
+              style={[
+                styles.pillBtn,
+                {
+                  borderColor: colors.border,
+                  backgroundColor: colors.surfaceElevated,
+                  opacity: 1,
+                },
+              ]}>
+              <Text style={{color: colors.text, fontWeight: '800', fontSize: 15}}>
+                {isWatchedId(movie.id) ? t(locale, 'profileBtnWatched') : t(locale, 'profileBtnWatch')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           <View
             style={[
               styles.metaCard,
@@ -239,6 +318,13 @@ const styles = StyleSheet.create({
   overviewBody: {lineHeight: 22, fontSize: 15},
   tags: {flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12},
   tag: {paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999},
+  actionRow: {flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 14},
+  pillBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    borderWidth: 2,
+  },
   metaCard: {marginTop: 14, padding: 14, borderRadius: 16, borderWidth: 1},
   cta: {paddingHorizontal: 16, paddingVertical: 10, borderRadius: 999},
   ctaWide: {marginTop: 14, paddingVertical: 16, borderRadius: 14, alignItems: 'center'},

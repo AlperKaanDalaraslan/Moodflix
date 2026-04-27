@@ -14,10 +14,13 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import {discoverMovies, fetchGenreList, hasApiKey} from '../api/tmdbClient';
 import {PosterImage} from '../components/PosterImage';
 import {MOOD_GENRES} from '../constants/moodGenres';
+import {useAuth} from '../context/AuthContext';
+import {useProfile} from '../context/ProfileContext';
 import {useSettings} from '../context/SettingsContext';
 import {t} from '../i18n/translations';
-import {getTheme} from '../theme/colors';
+import {getTheme, isDarkMode} from '../theme/colors';
 import {shadow} from '../theme/shadows';
+import {showLoginRequiredAlert} from '../utils/authGate';
 
 const PICK_COUNT = 5;
 const FETCH_PAGE_WINDOW = 4;
@@ -148,7 +151,7 @@ const MOODS = [
 
 /** Yıl/puan stepper +/−; koyu temada basılıyken sarı (primary) dolgu. */
 function DiscoverStepButton({onPress, colors, theme, label, hitSlop}) {
-  const isDark = theme === 'dark';
+  const isDark = isDarkMode(theme);
   return (
     <Pressable
       accessibilityRole="button"
@@ -181,6 +184,8 @@ function DiscoverStepButton({onPress, colors, theme, label, hitSlop}) {
 
 export function DiscoverScreen() {
   const {locale, theme} = useSettings();
+  const {hydrated, isLoggedIn, token} = useAuth();
+  const {submitMood} = useProfile();
   const colors = getTheme(theme);
   const chipBase = [
     styles.chip,
@@ -274,6 +279,10 @@ export function DiscoverScreen() {
   const recommend = async () => {
     if (!hasApiKey()) {
       setError('TMDB_API_KEY_MISSING');
+      return;
+    }
+    if (!hydrated || !isLoggedIn) {
+      showLoginRequiredAlert(navigation, locale);
       return;
     }
     setBusy(true);
@@ -410,7 +419,16 @@ export function DiscoverScreen() {
                   <TouchableOpacity
                     key={m.id}
                     activeOpacity={0.88}
-                    onPress={() => setMood(active ? null : m.id)}
+                    onPress={() => {
+                      if (!active) {
+                        setMood(m.id);
+                        if (hydrated && isLoggedIn && token) {
+                          void submitMood({mood: m.id, context: 'discover'});
+                        }
+                      } else {
+                        setMood(null);
+                      }
+                    }}
                     style={[
                       styles.chip,
                       styles.moodChip,

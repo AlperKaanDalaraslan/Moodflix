@@ -15,7 +15,7 @@ import {fetchCategoryBrowse, fetchGenreList, hasApiKey} from '../api/tmdbClient'
 import {PosterImage} from '../components/PosterImage';
 import {useSettings} from '../context/SettingsContext';
 import {t} from '../i18n/translations';
-import {getTheme} from '../theme/colors';
+import {getTheme, isDarkMode} from '../theme/colors';
 import {shadow} from '../theme/shadows';
 
 const SORT_OPTIONS = [
@@ -154,6 +154,7 @@ function OptionPickerModal({
 export function CategoryListScreen() {
   const {locale, theme} = useSettings();
   const colors = getTheme(theme);
+  const darkMode = isDarkMode(theme);
   const navigation = useNavigation();
   const route = useRoute();
   const {width: windowWidth, height: windowHeight} = useWindowDimensions();
@@ -380,7 +381,7 @@ export function CategoryListScreen() {
             style={[
               styles.posterShell,
               shadow.poster,
-              {backgroundColor: theme === 'dark' ? '#080808' : '#ECE8DC'},
+              {backgroundColor: darkMode ? '#080808' : '#ECE8DC'},
             ]}>
             <View style={styles.posterInner}>
               <PosterImage posterPath={item.poster_path} colors={colors} size="medium" />
@@ -412,7 +413,7 @@ export function CategoryListScreen() {
             shadow.soft,
             {
               borderColor: colors.border,
-              backgroundColor: theme === 'dark' ? '#121212' : colors.surface,
+              backgroundColor: darkMode ? '#121212' : colors.surface,
             },
           ]}>
           <FilterCardRow

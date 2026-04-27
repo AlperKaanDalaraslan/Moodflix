@@ -13,13 +13,32 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import {hasApiKey, searchMovies} from '../api/tmdbClient';
 import {PosterImage} from '../components/PosterImage';
 import {SearchEmptyState} from '../components/SearchEmptyState';
+import {useAuth} from '../context/AuthContext';
+import {useProfile} from '../context/ProfileContext';
 import {useSettings} from '../context/SettingsContext';
 import {t} from '../i18n/translations';
 import {getTheme} from '../theme/colors';
 import {shadow} from '../theme/shadows';
 
+function normalizeLooseQuery(input) {
+  return String(input ?? '')
+    .toLocaleLowerCase('tr-TR')
+    .replace(/[ı]/g, 'i')
+    .replace(/[İ]/g, 'i')
+    .replace(/[ş]/g, 's')
+    .replace(/[ğ]/g, 'g')
+    .replace(/[ç]/g, 'c')
+    .replace(/[ö]/g, 'o')
+    .replace(/[ü]/g, 'u')
+    .replace(/['".,!?;:()[\]{}\-_/\\|@#$%^&*+=~`]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function SearchScreen() {
   const {locale, theme} = useSettings();
+  const {hydrated, isLoggedIn, token} = useAuth();
+  const {submitSearchLog} = useProfile();
   const colors = getTheme(theme);
   const navigation = useNavigation();
 
@@ -30,7 +49,7 @@ export function SearchScreen() {
   /** Last query we actually sent to the API — drives empty-state copy */
   const [searchedFor, setSearchedFor] = useState('');
 
-  const canSearch = useMemo(() => q.trim().length >= 2, [q]);
+  const canSearch = useMemo(() => normalizeLooseQuery(q).length >= 2, [q]);
 
   const emptyVariant = useMemo(() => {
     if (!canSearch) {
@@ -53,15 +72,39 @@ export function SearchScreen() {
     setLoading(true);
     setError(null);
     try {
-      const res = await searchMovies(locale, q.trim(), 1);
-      setResults(res.results);
-      setSearchedFor(q.trim());
+      const raw = q.trim();
+      const loose = normalizeLooseQuery(raw);
+      const variantSet = new Set([raw, loose]);
+      if (loose.includes(' ')) {
+        variantSet.add(loose.split(' ').join(''));
+      }
+      const variants = [...variantSet].filter(x => x.length >= 2).slice(0, 3);
+      const responses = await Promise.all(
+        variants.map(v => searchMovies(locale, v, 1).catch(() => ({results: []}))),
+      );
+      const merged = [];
+      const seen = new Set();
+      responses.forEach(res => {
+        (res.results ?? []).forEach(item => {
+          const id = String(item?.id ?? '');
+          if (!id || seen.has(id)) {
+            return;
+          }
+          seen.add(id);
+          merged.push(item);
+        });
+      });
+      setResults(merged);
+      setSearchedFor(raw);
+      if (hydrated && isLoggedIn && token) {
+        void submitSearchLog(raw);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'err');
     } finally {
       setLoading(false);
     }
-  }, [canSearch, locale, q]);
+  }, [canSearch, locale, q, hydrated, isLoggedIn, token, submitSearchLog]);
 
   return (
     <SafeAreaView style={[styles.safe, {backgroundColor: colors.background}]} edges={['top']}>

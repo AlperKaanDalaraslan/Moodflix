@@ -1,12 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, {createContext, useCallback, useContext, useEffect, useMemo, useState} from 'react';
 import {DEFAULT_CONTENT_LOCALE, isTmdbContentLocale} from '../i18n/contentLocales';
+import {isThemeId} from '../theme/colors';
 
 const STORAGE_KEY = '@moodflix/settings';
 
 const defaultSettings = {
   locale: DEFAULT_CONTENT_LOCALE,
   theme: 'dark',
+  shakeThemeEnabled: false,
 };
 
 const SettingsContext = createContext(null);
@@ -28,7 +30,8 @@ export function SettingsProvider({children}) {
             locale: isTmdbContentLocale(parsed.locale)
               ? parsed.locale
               : DEFAULT_CONTENT_LOCALE,
-            theme: parsed.theme === 'light' ? 'light' : 'dark',
+            theme: isThemeId(parsed.theme) ? parsed.theme : 'dark',
+            shakeThemeEnabled: parsed.shakeThemeEnabled === true,
           });
         }
       } catch {
@@ -54,8 +57,21 @@ export function SettingsProvider({children}) {
   }, []);
 
   const setTheme = useCallback(theme => {
+    if (!isThemeId(theme)) {
+      return;
+    }
     setSettings(prev => {
       const next = {...prev, theme};
+      void AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(
+        () => undefined,
+      );
+      return next;
+    });
+  }, []);
+
+  const setShakeThemeEnabled = useCallback(enabled => {
+    setSettings(prev => {
+      const next = {...prev, shakeThemeEnabled: enabled === true};
       void AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(
         () => undefined,
       );
@@ -68,8 +84,9 @@ export function SettingsProvider({children}) {
       ...settings,
       setLocale,
       setTheme,
+      setShakeThemeEnabled,
     }),
-    [settings, setLocale, setTheme],
+    [settings, setLocale, setTheme, setShakeThemeEnabled],
   );
 
   return (

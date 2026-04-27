@@ -16,7 +16,7 @@ const winH = Dimensions.get('window').height;
 
 const POSTER_COUNT = 5;
 
-export function FavoritesEmptyState({colors, locale, navigation}) {
+export function FavoritesEmptyState({colors, locale, navigation, needsAuth = false}) {
   const heartScale = useRef(new Animated.Value(1)).current;
   const heartFloat = useRef(new Animated.Value(0)).current;
   const stripShift = useRef(new Animated.Value(0)).current;
@@ -202,9 +202,17 @@ export function FavoritesEmptyState({colors, locale, navigation}) {
 
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={t(locale, 'favoritesEmptySwipeCta')}
-        accessibilityHint={t(locale, 'favoritesEmptySwipeA11y')}
-        onPress={() => navigation.navigate('Swipe')}
+        accessibilityLabel={
+          needsAuth ? t(locale, 'authLoginCta') : t(locale, 'favoritesEmptySwipeCta')
+        }
+        accessibilityHint={
+          needsAuth ? t(locale, 'authRequiredBody') : t(locale, 'favoritesEmptySwipeA11y')
+        }
+        onPress={() =>
+          needsAuth
+            ? navigation.navigate('LoginRegister', {mode: 'login'})
+            : navigation.navigate('Swipe')
+        }
         style={({pressed}) => [
           styles.card,
           {
@@ -301,13 +309,17 @@ export function FavoritesEmptyState({colors, locale, navigation}) {
           </Animated.View>
         </View>
 
-        <Text style={[styles.title, {color: colors.text}]}>{t(locale, 'favoritesEmptyTitle')}</Text>
-        <Text style={[styles.body, {color: colors.textMuted}]}>{t(locale, 'favoritesEmpty')}</Text>
+        <Text style={[styles.title, {color: colors.text}]}>
+          {needsAuth ? t(locale, 'favoritesNeedLoginTitle') : t(locale, 'favoritesEmptyTitle')}
+        </Text>
+        <Text style={[styles.body, {color: colors.textMuted}]}>
+          {needsAuth ? t(locale, 'favoritesNeedLoginBody') : t(locale, 'favoritesEmpty')}
+        </Text>
 
         <View style={[styles.ctaRow, {backgroundColor: colors.primary}, shadow.hero]}>
-          <Text style={styles.ctaGlyph}>⇄</Text>
+          <Text style={styles.ctaGlyph}>{needsAuth ? '→' : '⇄'}</Text>
           <Text style={[styles.ctaPillText, {color: colors.onPrimary}]}>
-            {t(locale, 'favoritesEmptySwipeCta')}
+            {needsAuth ? t(locale, 'authLoginCta') : t(locale, 'favoritesEmptySwipeCta')}
           </Text>
         </View>
       </Pressable>

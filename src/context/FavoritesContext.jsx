@@ -1,12 +1,23 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, {createContext, useCallback, useContext, useEffect, useMemo, useState} from 'react';
+import {movieIdentityKey} from '../utils/profileMovie';
+import {useProfile} from './ProfileContext';
 
 const STORAGE_KEY = '@moodflix/favorites';
 
 const FavoritesContext = createContext(null);
 
-export function FavoritesProvider({children}) {
-  const [favorites, setFavorites] = useState([]);
+/**
+ * @param {object} props
+ * @param {React.ReactNode} props.children
+ * @param {boolean} props.authHydrated AuthContext’ten (FavoritesAuthBridge) — burada useAuth kullanılmaz (döngü/HMR riski).
+ * @param {boolean} props.authIsLoggedIn
+ */
+export function FavoritesProvider({children, authHydrated = false, authIsLoggedIn = false}) {
+  const hydrated = authHydrated;
+  const isLoggedIn = authIsLoggedIn;
+  const {normalizedFavorites, toggleFavoriteMovie} = useProfile();
+  const [guestFavorites, setGuestFavorites] = useState([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -19,7 +30,7 @@ export function FavoritesProvider({children}) {
         if (raw) {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed)) {
-            setFavorites(parsed);
+            setGuestFavorites(parsed);
           }
         }
       } catch {
@@ -31,26 +42,62 @@ export function FavoritesProvider({children}) {
     };
   }, []);
 
-  const toggleFavorite = useCallback(movie => {
-    setFavorites(prev => {
-      const exists = prev.some(m => m.id === movie.id);
-      const next = exists
-        ? prev.filter(m => m.id !== movie.id)
-        : [movie, ...prev];
-      void AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(
-        () => undefined,
-      );
-      return next;
-    });
-  }, []);
+  const favorites = useMemo(() => {
+    if (hydrated && isLoggedIn) {
+      return normalizedFavorites;
+    }
+    return guestFavorites;
+  }, [hydrated, isLoggedIn, normalizedFavorites, guestFavorites]);
 
-  const ids = useMemo(() => new Set(favorites.map(m => m.id)), [favorites]);
+  const toggleFavorite = useCallback(
+    movie => {
+      if (!hydrated || !isLoggedIn) {
+        if (!hydrated) {
+          return false;
+        }
+        setGuestFavorites(prev => {
+          const incomingKey = movieIdentityKey(movie?.id);
+          const exists = prev.some(m => movieIdentityKey(m?.id) === incomingKey);
+          const next = exists
+            ? prev.filter(m => movieIdentityKey(m?.id) !== incomingKey)
+            : [movie, ...prev];
+          AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(() => undefined);
+          return next;
+        });
+        return true;
+      }
+      toggleFavoriteMovie(movie).catch(() => {});
+      return true;
+    },
+    [hydrated, isLoggedIn, toggleFavoriteMovie],
+  );
 
-  const isFavorite = useCallback(id => ids.has(id), [ids]);
+  /** Girişli: sunucu listesi; misafir: yerel */
+  const listForDisplay = useMemo(() => {
+    if (!hydrated) {
+      return [];
+    }
+    if (isLoggedIn) {
+      return favorites;
+    }
+    return guestFavorites;
+  }, [hydrated, isLoggedIn, favorites, guestFavorites]);
+
+  const ids = useMemo(
+    () => new Set(listForDisplay.map(m => movieIdentityKey(m.id)).filter(Boolean)),
+    [listForDisplay],
+  );
+
+  const isFavorite = useCallback(id => ids.has(movieIdentityKey(id)), [ids]);
 
   const value = useMemo(
-    () => ({favorites, ids, toggleFavorite, isFavorite}),
-    [favorites, ids, toggleFavorite, isFavorite],
+    () => ({
+      favorites: listForDisplay,
+      ids,
+      toggleFavorite,
+      isFavorite,
+    }),
+    [listForDisplay, ids, toggleFavorite, isFavorite],
   );
 
   return (

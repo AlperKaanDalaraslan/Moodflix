@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
+  discoverMovies,
   fetchGenreList,
   fetchNowPlaying,
   fetchPopular,
@@ -21,17 +22,21 @@ import {
   hasApiKey,
 } from '../api/tmdbClient';
 import { PosterImage } from '../components/PosterImage';
+import { useAuth } from '../context/AuthContext';
+import { useProfile } from '../context/ProfileContext';
 import { useSettings } from '../context/SettingsContext';
 import { t } from '../i18n/translations';
 import { getTheme } from '../theme/colors';
 import { shadow } from '../theme/shadows';
+import { showLoginRequiredAlert } from '../utils/authGate';
 
 /** Sarı ok — kategori tam listesine gider */
 const ROW_MORE_ARROW = '#FFD60A';
 
 export function HomeScreen() {
   const { locale, theme } = useSettings();
-  const colors = getTheme(theme);
+  const { hydrated, isLoggedIn } = useAuth();
+  const { feed, insights } = useProfile();
   const navigation = useNavigation();
 
   const [trending, setTrending] = useState([]);
@@ -40,8 +45,38 @@ export function HomeScreen() {
   const [nowPlaying, setNowPlaying] = useState([]);
   const [upcoming, setUpcoming] = useState([]);
   const [genres, setGenres] = useState([]);
+  const [personalFeed, setPersonalFeed] = useState([]);
+  const [personalLoading, setPersonalLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  const colors = getTheme(theme);
+  const insightGenre =
+    typeof insights?.headlineGenre === 'string' ? insights.headlineGenre : null;
+  const insightPercentNumber = Number(insights?.headlinePercent);
+  const insightPercent = Number.isFinite(insightPercentNumber)
+    ? Math.round(insightPercentNumber)
+    : null;
+  const feedTasteSummary =
+    typeof feed?.tasteSummary === 'string'
+      ? feed.tasteSummary
+      : typeof feed?.summary === 'string'
+        ? feed.summary
+        : null;
+  const feedMoodTrend = typeof feed?.moodTrend === 'string' ? feed.moodTrend : null;
+  const feedHintsLine = Array.isArray(feed?.hints)
+    ? feed.hints.filter(x => typeof x === 'string' && x.trim()).join(' · ')
+    : typeof feed?.hints === 'string'
+      ? feed.hints
+      : null;
+
+  const goDiscoverPersonalized = useCallback(() => {
+    if (!hydrated || !isLoggedIn) {
+      showLoginRequiredAlert(navigation, locale);
+      return;
+    }
+    navigation.navigate('Discover');
+  }, [hydrated, isLoggedIn, navigation, locale]);
 
   const load = useCallback(async () => {
     if (!hasApiKey()) {
@@ -77,6 +112,46 @@ export function HomeScreen() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (!hydrated || !isLoggedIn || !hasApiKey()) {
+      setPersonalFeed([]);
+      return;
+    }
+    const raw = feed?.focusGenres ?? feed?.hints?.fetchByGenres;
+    const ids = Array.isArray(raw)
+      ? raw.map(x => Number(x)).filter(n => Number.isFinite(n) && n > 0)
+      : [];
+    if (!ids.length) {
+      setPersonalFeed([]);
+      return;
+    }
+    let cancelled = false;
+    setPersonalLoading(true);
+    void discoverMovies(locale, {
+      with_genres: ids.join(','),
+      page: 1,
+      sort_by: 'popularity.desc',
+    })
+      .then(res => {
+        if (!cancelled) {
+          setPersonalFeed((res.results ?? []).filter(m => m.poster_path).slice(0, 12));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPersonalFeed([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setPersonalLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [locale, hydrated, isLoggedIn, feed]);
+
   const goMovie = id => {
     navigation.navigate('MovieDetail', { movieId: id });
   };
@@ -85,8 +160,15 @@ export function HomeScreen() {
     navigation.navigate('CategoryList', { categoryId, titleKey });
   };
 
-  const renderRow = (title, data, categoryId, titleKey) => (
+  const renderRow = (title, data, categoryId, titleKey, opts) => {
+    const staticHeader = Boolean(opts?.staticHeader);
+    return (
     <View style={styles.section}>
+      {staticHeader ? (
+        <View style={{ paddingHorizontal: 16, marginBottom: 12 }}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
+        </View>
+      ) : (
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${title}. ${t(locale, 'seeAllCategory')}`}
@@ -109,6 +191,7 @@ export function HomeScreen() {
           {t(locale, 'seeAll')}
         </Text>
       </Pressable>
+      )}
       <FlatList
         horizontal
         data={data}
@@ -120,6 +203,7 @@ export function HomeScreen() {
           alignItems: 'flex-start',
         }}
         ListFooterComponent={
+          staticHeader ? null : (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={t(locale, 'seeAllCategory')}
@@ -133,6 +217,7 @@ export function HomeScreen() {
               →
             </Text>
           </Pressable>
+          )
         }
         renderItem={({ item }) => (
           <Pressable onPress={() => goMovie(item.id)} style={{ width: 120 }}>
@@ -182,7 +267,8 @@ export function HomeScreen() {
         )}
       />
     </View>
-  );
+    );
+  };
 
   return (
     <SafeAreaView
@@ -249,7 +335,7 @@ export function HomeScreen() {
           showsVerticalScrollIndicator={false}
         >
           <TouchableOpacity
-            onPress={() => navigation.navigate('Discover')}
+            onPress={goDiscoverPersonalized}
             style={[
               styles.heroCta,
               { backgroundColor: colors.primary },
@@ -265,6 +351,51 @@ export function HomeScreen() {
               {t(locale, 'pickForYou')}
             </Text>
           </TouchableOpacity>
+
+          {hydrated && isLoggedIn && insightGenre && insightPercent != null ? (
+            <View
+              style={[
+                styles.insightBanner,
+                { borderColor: colors.primary, backgroundColor: colors.surface },
+              ]}
+            >
+              <Text style={[styles.insightBannerTitle, { color: colors.text }]}>
+                {t(locale, 'profileYourTaste')}
+              </Text>
+              <Text style={[styles.insightBannerBody, { color: colors.textMuted }]}>
+                {t(locale, 'profileInsightLine')
+                  .replace('{percent}', String(insightPercent))
+                  .replace('{genre}', insightGenre)}
+              </Text>
+            </View>
+          ) : null}
+
+          {hydrated && isLoggedIn && (feedTasteSummary || feedMoodTrend || feedHintsLine) ? (
+            <View style={[styles.feedSummary, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
+              {feedTasteSummary ? (
+                <Text style={[styles.feedSummaryText, { color: colors.text }]}>{feedTasteSummary}</Text>
+              ) : null}
+              {feedMoodTrend ? (
+                <Text style={[styles.feedSummarySub, { color: colors.textMuted }]}>{feedMoodTrend}</Text>
+              ) : null}
+              {feedHintsLine ? (
+                <Text style={[styles.feedSummarySub, { color: colors.textMuted, marginTop: 6 }]}>{feedHintsLine}</Text>
+              ) : null}
+            </View>
+          ) : null}
+
+          {hydrated && isLoggedIn && (personalLoading || personalFeed.length > 0) ? (
+            personalLoading && personalFeed.length === 0 ? (
+              <View style={styles.personalLoading}>
+                <ActivityIndicator color={colors.primary} />
+                <Text style={{ color: colors.textMuted, marginTop: 8 }}>{t(locale, 'loading')}</Text>
+              </View>
+            ) : personalFeed.length ? (
+              renderRow(t(locale, 'homePersonalFeed'), personalFeed, 'popular', 'popular', {
+                staticHeader: true,
+              })
+            ) : null
+          ) : null}
 
           {renderRow(t(locale, 'trending'), trending, 'trending', 'trending')}
           {renderRow(t(locale, 'popular'), popular, 'popular', 'popular')}
@@ -395,5 +526,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 10,
     borderRadius: 999,
+  },
+  insightBanner: {
+    marginHorizontal: 16,
+    marginBottom: 14,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  insightBannerTitle: { fontSize: 16, fontWeight: '800' },
+  insightBannerBody: { marginTop: 6, fontSize: 14, fontWeight: '600', lineHeight: 20 },
+  feedSummary: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  feedSummaryText: { fontSize: 15, fontWeight: '700', lineHeight: 21 },
+  feedSummarySub: { marginTop: 6, fontSize: 13, fontWeight: '600', lineHeight: 18 },
+  personalLoading: {
+    paddingVertical: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

@@ -6,16 +6,20 @@ import {Platform, StyleSheet, Text, View} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useSettings} from '../context/SettingsContext';
 import {t} from '../i18n/translations';
-import {getTheme} from '../theme/colors';
+import {getTheme, isDarkMode} from '../theme/colors';
 import {shadow} from '../theme/shadows';
 import {CategoryListScreen} from '../screens/CategoryListScreen';
 import {DiscoverScreen} from '../screens/DiscoverScreen';
 import {FavoritesScreen} from '../screens/FavoritesScreen';
 import {HomeScreen} from '../screens/HomeScreen';
 import {MovieDetailScreen} from '../screens/MovieDetailScreen';
+import {LoginRegisterScreen} from '../screens/LoginRegisterScreen';
+import {ProfileEditScreen} from '../screens/ProfileEditScreen';
+import {ProfileMoviesScreen} from '../screens/ProfileMoviesScreen';
 import {ProfileScreen} from '../screens/ProfileScreen';
 import {SearchScreen} from '../screens/SearchScreen';
 import {SwipeScreen} from '../screens/SwipeScreen';
+import {ThemePickerScreen} from '../screens/ThemePickerScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -39,10 +43,11 @@ function TabLabel({focused, label, colors}) {
 
 /** Tüm sekmelerde aynı boyut / hizalı ikon; aktif: sarı + hafif zemin */
 function TabGlyph({focused, theme, colors, children}) {
+  const darkMode = isDarkMode(theme);
   const pill =
-    focused && theme === 'dark'
+    focused && darkMode
       ? 'rgba(245, 197, 24, 0.18)'
-      : focused && theme === 'light'
+      : focused && !darkMode
         ? 'rgba(230, 172, 0, 0.24)'
         : 'transparent';
 
@@ -192,7 +197,7 @@ export function RootNavigator() {
   const colors = getTheme(theme);
 
   const navigationTheme = useMemo(() => {
-    const base = theme === 'dark' ? DarkTheme : DefaultTheme;
+    const base = isDarkMode(theme) ? DarkTheme : DefaultTheme;
     return {
       ...base,
       colors: {
@@ -238,6 +243,14 @@ export function RootNavigator() {
           options={{title: ''}}
         />
         <Stack.Screen name="Profile" component={ProfileScreen} />
+        <Stack.Screen name="ProfileEdit" component={ProfileEditScreen} />
+        <Stack.Screen name="ProfileMovies" component={ProfileMoviesScreen} />
+        <Stack.Screen name="ThemePicker" component={ThemePickerScreen} />
+        <Stack.Screen
+          name="LoginRegister"
+          component={LoginRegisterScreen}
+          options={{title: ''}}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );

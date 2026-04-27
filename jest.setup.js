@@ -59,6 +59,48 @@ jest.mock('react-native-webview', () => {
   };
 });
 
+jest.mock('react-native-keychain', () => {
+  const jwtByService = new Map();
+  return {
+    __esModule: true,
+    setGenericPassword: jest.fn(async (_u, password, opts) => {
+      jwtByService.set(opts?.service ?? 'default', password);
+      return {service: opts?.service ?? 'default', storage: 'mock'};
+    }),
+    getGenericPassword: jest.fn(async opts => {
+      const password = jwtByService.get(opts?.service ?? 'default');
+      if (!password) {
+        return false;
+      }
+      return {
+        service: opts?.service ?? 'default',
+        username: 'moodflix_jwt',
+        password,
+      };
+    }),
+    resetGenericPassword: jest.fn(async opts => {
+      jwtByService.delete(opts?.service ?? 'default');
+      return true;
+    }),
+  };
+});
+
+jest.mock('./src/data/emojiAvatarData', () => ({
+  getEmojiAvatarRecords: () => [
+    {emoji: '😀', name: 'grinning face', slug: 'grinning_face', group: 'Smileys'},
+    {emoji: '🐱', name: 'cat face', slug: 'cat_face', group: 'Animals'},
+  ],
+  filterEmojiAvatarRecords: (recs, q) => {
+    const t = String(q ?? '')
+      .trim()
+      .toLowerCase();
+    if (!t) {
+      return recs;
+    }
+    return recs.filter(r => r.name.toLowerCase().includes(t));
+  },
+}));
+
 jest.mock('@react-native-async-storage/async-storage', () => {
   const store = new Map();
   return {

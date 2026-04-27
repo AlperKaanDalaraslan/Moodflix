@@ -1,6 +1,4 @@
-import {TMDB_API_KEY} from '../config/tmdb';
-
-const BASE = 'https://api.themoviedb.org/3';
+import {TMDB_API_BASE, TMDB_API_KEY} from '../config/tmdb';
 
 function regionFromLanguageTag(language) {
   const m = /^[a-z]{2,3}-([A-Z]{2})$/i.exec(String(language ?? ''));
@@ -12,7 +10,7 @@ function buildUrl(path, language, params = {}) {
   if (!key) {
     throw new Error('TMDB_API_KEY_MISSING');
   }
-  const u = new URL(`${BASE}${path}`);
+  const u = new URL(`${TMDB_API_BASE}${path}`);
   u.searchParams.set('api_key', key);
   u.searchParams.set('language', language);
   const region = regionFromLanguageTag(language);

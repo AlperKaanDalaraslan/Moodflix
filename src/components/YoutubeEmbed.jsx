@@ -14,18 +14,30 @@ function sanitizeVideoId(id) {
   return id;
 }
 
-function buildEmbedHtml(videoId, {autoPlay, muted, controls, cinemaMode, coverZoom, loop}) {
-  const q = ['playsinline=1', 'rel=0', 'modestbranding=1', 'iv_load_policy=3', `controls=${controls ? '1' : '0'}`];
-  /** Tek videoda loop için playlist aynı id olmalı; bitişte replay/end ekranında takılmayı azaltır */
+function buildEmbedHtml(videoId, {autoPlay, muted, controls, cinemaMode, coverZoom, loop, captionsOn, captionLang}) {
+  const q = [
+    'playsinline=1',
+    'rel=0',
+    'modestbranding=1',
+    'iv_load_policy=3',
+    'fs=0',
+    'disablekb=1',
+    `controls=${controls ? '1' : '0'}`,
+  ];
   if (loop) {
     q.push('loop=1');
     q.push(`playlist=${videoId}`);
   }
-  if (cinemaMode) {
-    /** Daha sade tam ekran: altyazı varsayılan kapalı, ince beyaz scrubber */
+  if (captionsOn) {
+    q.push('cc_load_policy=1');
+    if (captionLang) {
+      q.push(`cc_lang_pref=${encodeURIComponent(captionLang)}`);
+      q.push(`hl=${encodeURIComponent(captionLang)}`);
+    }
+  } else if (cinemaMode) {
     q.push('cc_load_policy=0');
-    q.push('color=white');
   }
+  q.push('color=white');
   if (autoPlay) {
     q.push('autoplay=1');
   }
@@ -34,12 +46,10 @@ function buildEmbedHtml(videoId, {autoPlay, muted, controls, cinemaMode, coverZo
   }
   const qs = q.join('&');
   const src = `https://www.youtube-nocookie.com/embed/${videoId}?${qs}`;
-  const wCss = coverZoom
-    ? '.w { position: fixed; inset: 0; overflow: hidden; background: #000; }'
-    : '.w { position: fixed; inset: 0; }';
-  const iframeCss = coverZoom
-    ? 'iframe { position: absolute; border: 0; top: 50%; left: 50%; width: 100%; height: 100%; transform: translate(-50%, calc(-50% + 2%)) scale(1.045); transform-origin: center center; }'
-    : 'iframe { display: block; width: 100%; height: 100%; border: 0; }';
+  const wCss = '.w { position: fixed; inset: 0; overflow: hidden; background: #000; }';
+  /** Kırpma yok: büyütmek kareyi kesiyor. “Diğer videolar” masaüstü UA ile kapanır. */
+  const iframeCss =
+    'iframe { display: block; width: 100%; height: 100%; border: 0; }';
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -63,7 +73,11 @@ function buildEmbedHtml(videoId, {autoPlay, muted, controls, cinemaMode, coverZo
 </html>`;
 }
 
-/** Mobile Safari–like UA: bare WKWebView user agent can make YouTube return error 153. */
+/** Mobil Safari UA YouTube’da “Diğer videolar” şeridini açıyor; kaydır kartında masaüstü oynatıcı. */
+const SWIPE_WEBVIEW_UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+/** Modal: bare WKWebView UA bazen error 153 verir. */
 const WEBVIEW_UA = Platform.select({
   ios:
     'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
@@ -76,8 +90,10 @@ const WEBVIEW_UA = Platform.select({
  * In-app YouTube playback via official embed (no external app handoff).
  * @param {boolean} passThroughTouches — Kaydır kartı: WebView dokunmaz (pan üstte), üstte şeffaf kalkan YouTube’un tıklanıp durmasını engeller.
  * @param {boolean} flexLayout — Modal gibi ortamlarda WebView’a flex ver (absoluteFill yükseklik 0 kalabiliyor).
- * @param {boolean} cinemaMode — Fragman modu: daha az YouTube kromu (cc_load_policy, scrubber rengi).
- * @param {boolean} coverZoom — Kaydır kartı: iframe hafif büyütülür, iç letterbox azalır (taşan kırpılır).
+ * @param {boolean} cinemaMode — Fragman modalı: sade krom.
+ * @param {boolean} coverZoom — Kaydır kartı: 16:9 kutuda YouTube başlık/öneri kırpılır.
+ * @param {boolean} captionsOn — Altyazıyı aç (Kaydır).
+ * @param {string} captionLang — cc_lang_pref (tr / en).
  * @param {boolean} loop — Bittiğinde YouTube son ekranında kalmaması için (playlist=aynı id gerekir).
  * @param {() => void} onShellLoadEnd — Kaydır kartı: ebeveyn tek spinner göstersin diye WebView yüklendiğinde (veya hata).
  */
@@ -92,6 +108,8 @@ export function YoutubeEmbed({
   cinemaMode = false,
   coverZoom = false,
   loop = false,
+  captionsOn = false,
+  captionLang = 'tr',
   onShellLoadEnd,
 }) {
   const safeId = sanitizeVideoId(videoId);
@@ -99,8 +117,27 @@ export function YoutubeEmbed({
     if (!safeId) {
       return null;
     }
-    return buildEmbedHtml(safeId, {autoPlay, muted, controls, cinemaMode, coverZoom, loop});
-  }, [autoPlay, cinemaMode, controls, coverZoom, loop, muted, safeId]);
+    return buildEmbedHtml(safeId, {
+      autoPlay,
+      muted,
+      controls,
+      cinemaMode,
+      coverZoom,
+      loop,
+      captionsOn,
+      captionLang,
+    });
+  }, [
+    autoPlay,
+    captionLang,
+    captionsOn,
+    cinemaMode,
+    controls,
+    coverZoom,
+    loop,
+    muted,
+    safeId,
+  ]);
 
   if (!safeId || !html) {
     return null;
@@ -133,7 +170,7 @@ export function YoutubeEmbed({
         onError={() => {
           onShellLoadEnd?.();
         }}
-        userAgent={WEBVIEW_UA}
+        userAgent={coverZoom ? SWIPE_WEBVIEW_UA : WEBVIEW_UA}
         allowsInlineMediaPlayback
         mediaPlaybackRequiresUserAction={false}
         javaScriptEnabled

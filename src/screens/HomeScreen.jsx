@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   discoverMovies,
+  fetchMovieDetail,
   fetchGenreList,
   fetchNowPlaying,
   fetchPopular,
@@ -28,15 +29,72 @@ import { useSettings } from '../context/SettingsContext';
 import { t } from '../i18n/translations';
 import { getTheme } from '../theme/colors';
 import { shadow } from '../theme/shadows';
-import { showLoginRequiredAlert } from '../utils/authGate';
+import { MOOD_GENRES } from '../constants/moodGenres';
+import { getRecommendations } from '../services/profileService';
 
 /** Sarı ok — kategori tam listesine gider */
 const ROW_MORE_ARROW = '#FFD60A';
+const MIN_PERSONAL_FEED_COUNT = 5;
+
+function collectPositiveGenreIds(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map(x => Number(x))
+    .filter(n => Number.isFinite(n) && n > 0);
+}
+
+function normalizeName(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  return value.trim().toLowerCase();
+}
+
+function toGenreNameIdMap(genres) {
+  const map = new Map();
+  for (const g of genres ?? []) {
+    const key = normalizeName(g?.name);
+    const id = Number(g?.id);
+    if (key && Number.isFinite(id) && id > 0) {
+      map.set(key, id);
+    }
+  }
+  return map;
+}
+
+function scoreMovieForUser(movie, weightedGenres) {
+  const CHILDISH_GENRE_IDS = new Set([16, 10751]);
+  const vote = Number(movie?.vote_average);
+  const popularity = Number(movie?.popularity);
+  const movieGenres = Array.isArray(movie?.genre_ids) ? movie.genre_ids : [];
+  let genreHitScore = 0;
+  let childishHit = 0;
+  for (const id of movieGenres) {
+    genreHitScore += weightedGenres.get(id) ?? 0;
+    if (CHILDISH_GENRE_IDS.has(id)) {
+      childishHit += 1;
+    }
+  }
+  const qualityScore = Number.isFinite(vote) ? Math.min(1, Math.max(0, vote / 10)) : 0.45;
+  const popularityScore = Number.isFinite(popularity)
+    ? Math.min(1, Math.log10(1 + Math.max(0, popularity)) / 3)
+    : 0.35;
+  const weightedTotal = [...weightedGenres.values()].reduce((sum, value) => sum + value, 0);
+  const childishWeight = (weightedGenres.get(16) ?? 0) + (weightedGenres.get(10751) ?? 0);
+  const childishAffinity = weightedTotal > 0 ? childishWeight / weightedTotal : 0;
+  const childishPenalty =
+    childishAffinity < 0.18 && childishHit > 0 ? Math.min(0.35, 0.14 * childishHit) : 0;
+  return (
+    genreHitScore * 0.62 + qualityScore * 0.28 + popularityScore * 0.1 - childishPenalty
+  );
+}
 
 export function HomeScreen() {
   const { locale, theme } = useSettings();
-  const { hydrated, isLoggedIn } = useAuth();
-  const { feed, insights } = useProfile();
+  const { hydrated, isLoggedIn, token } = useAuth();
+  const { feed, insights, profile } = useProfile();
   const navigation = useNavigation();
 
   const [trending, setTrending] = useState([]);
@@ -45,6 +103,8 @@ export function HomeScreen() {
   const [nowPlaying, setNowPlaying] = useState([]);
   const [upcoming, setUpcoming] = useState([]);
   const [genres, setGenres] = useState([]);
+  const [genreCatalog, setGenreCatalog] = useState([]);
+  const [backendRecoEnabled, setBackendRecoEnabled] = useState(true);
   const [personalFeed, setPersonalFeed] = useState([]);
   const [personalLoading, setPersonalLoading] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -71,12 +131,8 @@ export function HomeScreen() {
       : null;
 
   const goDiscoverPersonalized = useCallback(() => {
-    if (!hydrated || !isLoggedIn) {
-      showLoginRequiredAlert(navigation, locale);
-      return;
-    }
     navigation.navigate('Discover');
-  }, [hydrated, isLoggedIn, navigation, locale]);
+  }, [navigation]);
 
   const load = useCallback(async () => {
     if (!hasApiKey()) {
@@ -100,6 +156,7 @@ export function HomeScreen() {
       setTopRated(top.results.slice(0, 12));
       setNowPlaying(now.results.slice(0, 12));
       setUpcoming(up.results.slice(0, 12));
+      setGenreCatalog(g.genres);
       setGenres(g.genres.slice(0, 12));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'err');
@@ -117,26 +174,265 @@ export function HomeScreen() {
       setPersonalFeed([]);
       return;
     }
-    const raw = feed?.focusGenres ?? feed?.hints?.fetchByGenres;
-    const ids = Array.isArray(raw)
-      ? raw.map(x => Number(x)).filter(n => Number.isFinite(n) && n > 0)
-      : [];
-    if (!ids.length) {
+    const weightByGenreId = new Map();
+    const addGenreWeights = (ids, weight) => {
+      for (const id of ids) {
+        weightByGenreId.set(id, (weightByGenreId.get(id) ?? 0) + weight);
+      }
+    };
+    const genreNameMap = toGenreNameIdMap(genreCatalog);
+
+    addGenreWeights(
+      collectPositiveGenreIds(feed?.focusGenres ?? feed?.hints?.fetchByGenres),
+      4.6,
+    );
+
+    const profileMood = normalizeName(profile?.mood || feed?.mood || null);
+    if (profileMood && MOOD_GENRES[profileMood]) {
+      addGenreWeights(MOOD_GENRES[profileMood], 2.8);
+    }
+
+    if (
+      insights?.genreBreakdown &&
+      typeof insights.genreBreakdown === 'object' &&
+      !Array.isArray(insights.genreBreakdown)
+    ) {
+      Object.entries(insights.genreBreakdown).forEach(([name, value]) => {
+        const genreId = genreNameMap.get(normalizeName(name));
+        const num = Number(value);
+        if (genreId && Number.isFinite(num) && num > 0) {
+          weightByGenreId.set(genreId, (weightByGenreId.get(genreId) ?? 0) + num / 16);
+        }
+      });
+    }
+
+    if (Array.isArray(profile?.favoriteGenres)) {
+      for (const name of profile.favoriteGenres) {
+        const genreId = genreNameMap.get(normalizeName(name));
+        if (genreId) {
+          weightByGenreId.set(genreId, (weightByGenreId.get(genreId) ?? 0) + 2.4);
+        }
+      }
+    }
+
+    const extractMovieGenres = movie => {
+      const fromIds = collectPositiveGenreIds(movie?.genreIds ?? movie?.genre_ids);
+      if (fromIds.length) {
+        return fromIds;
+      }
+      if (Array.isArray(movie?.genres)) {
+        const idsByName = movie.genres
+          .map(name => genreNameMap.get(normalizeName(name)))
+          .filter(Boolean);
+        return collectPositiveGenreIds(idsByName);
+      }
+      return [];
+    };
+
+    for (const movie of profile?.likedMovies ?? []) {
+      addGenreWeights(extractMovieGenres(movie), 1.9);
+    }
+    for (const movie of profile?.favoriteMovies ?? []) {
+      addGenreWeights(extractMovieGenres(movie), 2.3);
+    }
+    for (const movie of profile?.watchedMovies ?? []) {
+      addGenreWeights(extractMovieGenres(movie), 1.1);
+    }
+
+    const topGenreIds = [...weightByGenreId.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([id]) => id)
+      .slice(0, 5);
+
+    if (!topGenreIds.length) {
       setPersonalFeed([]);
       return;
     }
+
+    const interactedMovieIds = new Set(
+      [
+        ...(profile?.likedMovies ?? []),
+        ...(profile?.favoriteMovies ?? []),
+        ...(profile?.watchedMovies ?? []),
+      ]
+        .map(m => Number(m?.movieId ?? m?.id))
+        .filter(id => Number.isFinite(id) && id > 0),
+    );
+
+    const discoverQueries = [
+      {
+        with_genres: topGenreIds.slice(0, 2).join(','),
+        page: 1,
+        sort_by: 'vote_average.desc',
+        'vote_average.gte': 6.2,
+        'vote_count.gte': 120,
+      },
+      ...topGenreIds.slice(0, 4).map((id, index) => ({
+        with_genres: String(id),
+        page: 1 + index,
+        sort_by: index % 2 === 0 ? 'popularity.desc' : 'vote_average.desc',
+        'vote_average.gte': 5.8,
+        'vote_count.gte': 60,
+      })),
+    ];
+
     let cancelled = false;
     setPersonalLoading(true);
-    void discoverMovies(locale, {
-      with_genres: ids.join(','),
-      page: 1,
-      sort_by: 'popularity.desc',
-    })
-      .then(res => {
-        if (!cancelled) {
-          setPersonalFeed((res.results ?? []).filter(m => m.poster_path).slice(0, 12));
+    const loadBackendRecommendations = async () => {
+      if (!token || !backendRecoEnabled) {
+        return [];
+      }
+      const payload = await getRecommendations(token, { limit: 20, includeSeen: false });
+      if (payload?.meta?.unavailable) {
+        setBackendRecoEnabled(false);
+        return [];
+      }
+      const items = Array.isArray(payload?.data?.items) ? payload.data.items : [];
+      const movieIds = items
+        .map(item => Number(item?.movieId))
+        .filter(id => Number.isFinite(id) && id > 0)
+        .slice(0, 12);
+      if (!movieIds.length) {
+        return [];
+      }
+      const detailResults = await Promise.allSettled(
+        movieIds.map(movieId => fetchMovieDetail(locale, movieId)),
+      );
+      const detailsById = new Map();
+      for (const detail of detailResults) {
+        if (detail.status === 'fulfilled' && detail.value?.id) {
+          const id = Number(detail.value.id);
+          const genreIds = Array.isArray(detail.value.genres)
+            ? detail.value.genres
+                .map(g => Number(g?.id))
+                .filter(n => Number.isFinite(n) && n > 0)
+            : [];
+          detailsById.set(id, {
+            ...detail.value,
+            genre_ids: genreIds,
+          });
         }
+      }
+      return movieIds
+        .map(id => detailsById.get(id))
+        .filter(Boolean)
+        .sort(
+          (a, b) =>
+            scoreMovieForUser(b, weightByGenreId) - scoreMovieForUser(a, weightByGenreId),
+        )
+        .slice(0, 12);
+    };
+    const topUpToMinimum = async initialList => {
+      const next = Array.isArray(initialList) ? [...initialList] : [];
+      if (next.length >= MIN_PERSONAL_FEED_COUNT) {
+        return next.slice(0, 12);
+      }
+      const blockedIds = new Set([
+        ...interactedMovieIds,
+        ...next.map(m => Number(m?.id)).filter(id => Number.isFinite(id) && id > 0),
+      ]);
+      const broadenedGenres = topGenreIds.slice(0, 5);
+      const discoverTopUpQueries = [
+        ...broadenedGenres.map((id, idx) => ({
+          with_genres: String(id),
+          page: 3 + idx,
+          sort_by: 'vote_average.desc',
+          'vote_average.gte': 5.4,
+          'vote_count.gte': 25,
+        })),
+        {
+          with_genres: broadenedGenres.join(','),
+          page: 2,
+          sort_by: 'popularity.desc',
+          'vote_average.gte': 5.0,
+          'vote_count.gte': 20,
+        },
+      ].filter(q => q.with_genres);
+      const extraResults = await Promise.allSettled(
+        discoverTopUpQueries.map(params =>
+          discoverMovies(locale, params).catch(() => ({ results: [] })),
+        ),
+      );
+      for (const result of extraResults) {
+        if (next.length >= MIN_PERSONAL_FEED_COUNT) {
+          break;
+        }
+        if (result.status !== 'fulfilled') {
+          continue;
+        }
+        for (const movie of result.value?.results ?? []) {
+          const id = Number(movie?.id);
+          if (
+            !Number.isFinite(id) ||
+            id <= 0 ||
+            blockedIds.has(id) ||
+            !movie?.poster_path
+          ) {
+            continue;
+          }
+          blockedIds.add(id);
+          next.push(movie);
+          if (next.length >= 12) {
+            break;
+          }
+          if (next.length >= MIN_PERSONAL_FEED_COUNT) {
+            break;
+          }
+        }
+      }
+      return next.slice(0, 12);
+    };
+    const loadLocalFallback = () =>
+      Promise.allSettled(discoverQueries.map(params => discoverMovies(locale, params)))
+      .then(async results => {
+        if (cancelled) {
+          return;
+        }
+        const seen = new Set();
+        const pool = [];
+        for (const result of results) {
+          if (result.status !== 'fulfilled') {
+            continue;
+          }
+          for (const movie of result.value?.results ?? []) {
+            const id = Number(movie?.id);
+            if (
+              !Number.isFinite(id) ||
+              id <= 0 ||
+              !movie?.poster_path ||
+              interactedMovieIds.has(id) ||
+              seen.has(id)
+            ) {
+              continue;
+            }
+            seen.add(id);
+            pool.push(movie);
+          }
+        }
+        const scored = pool
+          .map(movie => ({
+            movie,
+            score: scoreMovieForUser(movie, weightByGenreId),
+          }))
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 12)
+          .map(row => row.movie);
+        const completed = await topUpToMinimum(scored);
+        setPersonalFeed(completed);
+      });
+    void loadBackendRecommendations()
+      .then(async backendMovies => {
+        if (cancelled) {
+          return;
+        }
+        if (backendMovies.length) {
+          const completed = await topUpToMinimum(backendMovies);
+          setPersonalFeed(completed);
+          return;
+        }
+        return loadLocalFallback();
       })
+      .catch(() => loadLocalFallback())
       .catch(() => {
         if (!cancelled) {
           setPersonalFeed([]);
@@ -150,7 +446,17 @@ export function HomeScreen() {
     return () => {
       cancelled = true;
     };
-  }, [locale, hydrated, isLoggedIn, feed]);
+  }, [
+    locale,
+    hydrated,
+    isLoggedIn,
+    token,
+    feed,
+    profile,
+    insights,
+    genreCatalog,
+    backendRecoEnabled,
+  ]);
 
   const goMovie = id => {
     navigation.navigate('MovieDetail', { movieId: id });

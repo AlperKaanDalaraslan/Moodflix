@@ -8,7 +8,7 @@ import {t} from '../i18n/translations';
 import {YoutubeEmbed} from './YoutubeEmbed';
 
 /** Tam ekran WebView YouTube’da içeride ekstra letterbox. Hedef: ekran yüksekliğinin büyük kısmı (~%75). */
-const TRAILER_VIEWPORT_HEIGHT_RATIO = 0.75;
+const TRAILER_VIEWPORT_HEIGHT_RATIO = 0.88;
 
 function TrailerModalBody({videoId, onClose, colors, locale}) {
   const {height: winH, width: winW} = useWindowDimensions();
@@ -33,6 +33,8 @@ function TrailerModalBody({videoId, onClose, colors, locale}) {
               style={styles.embedFill}
               flexLayout
               cinemaMode
+              captionsOn
+              captionLang={String(locale || 'tr').startsWith('tr') ? 'tr' : 'en'}
               autoPlay
               muted={false}
               controls

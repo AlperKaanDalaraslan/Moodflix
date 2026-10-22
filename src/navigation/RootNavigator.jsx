@@ -13,9 +13,6 @@ import {DiscoverScreen} from '../screens/DiscoverScreen';
 import {FavoritesScreen} from '../screens/FavoritesScreen';
 import {HomeScreen} from '../screens/HomeScreen';
 import {MovieDetailScreen} from '../screens/MovieDetailScreen';
-import {LoginRegisterScreen} from '../screens/LoginRegisterScreen';
-import {ProfileEditScreen} from '../screens/ProfileEditScreen';
-import {ProfileMoviesScreen} from '../screens/ProfileMoviesScreen';
 import {ProfileScreen} from '../screens/ProfileScreen';
 import {SearchScreen} from '../screens/SearchScreen';
 import {SwipeScreen} from '../screens/SwipeScreen';
@@ -95,8 +92,10 @@ function MainTabs() {
     <Tab.Navigator
       /** Dil değişince sekmelerin etiketleri güncellensin (options önbelleği) */
       key={locale}
+      detachInactiveScreens={false}
       screenOptions={{
         headerShown: false,
+        freezeOnBlur: false,
         tabBarStyle: {
           backgroundColor: colors.background,
           borderTopWidth: StyleSheet.hairlineWidth,
@@ -243,14 +242,7 @@ export function RootNavigator() {
           options={{title: ''}}
         />
         <Stack.Screen name="Profile" component={ProfileScreen} />
-        <Stack.Screen name="ProfileEdit" component={ProfileEditScreen} />
-        <Stack.Screen name="ProfileMovies" component={ProfileMoviesScreen} />
         <Stack.Screen name="ThemePicker" component={ThemePickerScreen} />
-        <Stack.Screen
-          name="LoginRegister"
-          component={LoginRegisterScreen}
-          options={{title: ''}}
-        />
       </Stack.Navigator>
     </NavigationContainer>
   );

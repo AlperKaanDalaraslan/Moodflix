@@ -80,6 +80,28 @@ export function getFeed(token) {
   return profileRequest('GET', '/me/feed', {token});
 }
 
+export function getRecommendations(token, params = {}) {
+  const limitRaw = Number(params.limit);
+  const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(100, Math.trunc(limitRaw))) : 20;
+  const includeSeen = params.includeSeen === true ? 'true' : 'false';
+  const cursor = typeof params.cursor === 'string' ? params.cursor.trim() : '';
+  const qs = new URLSearchParams();
+  qs.set('limit', String(limit));
+  qs.set('includeSeen', includeSeen);
+  if (cursor) {
+    qs.set('cursor', cursor);
+  }
+  return profileRequest('GET', `/me/recommendations?${qs.toString()}`, {token}).catch(err => {
+    if (err?.status === 404) {
+      return {
+        data: {items: [], nextCursor: null},
+        meta: {unavailable: true},
+      };
+    }
+    throw err;
+  });
+}
+
 export function addFavoriteMovie(token, body) {
   return profileRequest('POST', '/me/favorites/movies', {token, body});
 }

@@ -1,5 +1,5 @@
-import {useNavigation, useRoute} from '@react-navigation/native';
-import React, {useCallback, useEffect, useMemo, useState} from 'react';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -10,17 +10,19 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import {SafeAreaView} from 'react-native-safe-area-context';
-import {discoverMovies, fetchGenreList, hasApiKey} from '../api/tmdbClient';
-import {PosterImage} from '../components/PosterImage';
-import {MOOD_GENRES} from '../constants/moodGenres';
-import {useAuth} from '../context/AuthContext';
-import {useProfile} from '../context/ProfileContext';
-import {useSettings} from '../context/SettingsContext';
-import {t} from '../i18n/translations';
-import {getTheme, isDarkMode} from '../theme/colors';
-import {shadow} from '../theme/shadows';
-import {showLoginRequiredAlert} from '../utils/authGate';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { discoverMovies, fetchGenreList, hasApiKey } from '../api/tmdbClient';
+import { DiscoverAiHero } from '../components/DiscoverAiHero';
+import { DiscoverThinking } from '../components/DiscoverThinking';
+import { PosterImage } from '../components/PosterImage';
+import { MOOD_GENRES } from '../constants/moodGenres';
+import { useAuth } from '../context/AuthContext';
+import { useProfile } from '../context/ProfileContext';
+import { useSettings } from '../context/SettingsContext';
+import { t } from '../i18n/translations';
+import { polishPickReasons, rankDiscoverWithAi } from '../services/discoverAiService';
+import { getTheme, isDarkMode } from '../theme/colors';
+import { shadow } from '../theme/shadows';
 
 const PICK_COUNT = 5;
 const FETCH_PAGE_WINDOW = 4;
@@ -76,7 +78,7 @@ function parseReleaseYear(movie) {
  * @returns {number} 0..1 raw fit (not rounded)
  */
 function computeDiscoverRawBlend(movie, ctx) {
-  const {targetGenreIds, minYear, maxYear, minVote} = ctx;
+  const { targetGenreIds, minYear, maxYear, minVote } = ctx;
   const midYear = (minYear + maxYear) / 2;
   const span = Math.max(1, maxYear - minYear);
   let year = parseReleaseYear(movie);
@@ -84,10 +86,16 @@ function computeDiscoverRawBlend(movie, ctx) {
     year = midYear;
   }
   const inRange = year >= minYear && year <= maxYear;
-  const yearFit = inRange ? 1 - Math.min(1, Math.abs(year - midYear) / span) : 0.28;
+  const yearFit = inRange
+    ? 1 - Math.min(1, Math.abs(year - midYear) / span)
+    : 0.28;
 
-  const va = typeof movie.vote_average === 'number' ? movie.vote_average : minVote;
-  const voteFit = Math.min(1, Math.max(0, (va - minVote + 0.2) / Math.max(0.15, 10 - minVote)));
+  const va =
+    typeof movie.vote_average === 'number' ? movie.vote_average : minVote;
+  const voteFit = Math.min(
+    1,
+    Math.max(0, (va - minVote + 0.2) / Math.max(0.15, 10 - minVote)),
+  );
 
   let genreFit = 0.76;
   if (targetGenreIds.length) {
@@ -121,44 +129,44 @@ function assignRandomSpreadMatchPercents(sortedDesc) {
     }
     pct = Math.max(44, Math.min(MATCH_PERCENT_CAP, pct));
     prev = pct;
-    return {movie: row.movie, matchPercent: pct};
+    return { movie: row.movie, matchPercent: pct };
   });
 }
 
 /** Sıra: genelde en çok tercih edilen hisler önce (kaydırmada öne çıkar). */
 const MOODS = [
-  {id: 'happy', emoji: '😄', labelKey: 'moodHappy'},
-  {id: 'chill', emoji: '😎', labelKey: 'moodChill'},
-  {id: 'romantic', emoji: '🥰', labelKey: 'moodRomantic'},
-  {id: 'sad', emoji: '😢', labelKey: 'moodSad'},
-  {id: 'hyped', emoji: '🤩', labelKey: 'moodHyped'},
-  {id: 'scared', emoji: '😱', labelKey: 'moodScared'},
-  {id: 'cozy', emoji: '☕', labelKey: 'moodCozy'},
-  {id: 'thoughtful', emoji: '🤔', labelKey: 'moodThoughtful'},
-  {id: 'adventurous', emoji: '🧭', labelKey: 'moodAdventurous'},
-  {id: 'fantasy', emoji: '✨', labelKey: 'moodFantasy'},
-  {id: 'crime', emoji: '🕵️', labelKey: 'moodCrime'},
-  {id: 'curious', emoji: '🧐', labelKey: 'moodCurious'},
-  {id: 'nostalgic', emoji: '😌', labelKey: 'moodNostalgic'},
-  {id: 'melancholic', emoji: '😔', labelKey: 'moodMelancholic'},
-  {id: 'playful', emoji: '😜', labelKey: 'moodPlayful'},
-  {id: 'heroic', emoji: '⚔️', labelKey: 'moodHeroic'},
-  {id: 'inspired', emoji: '💡', labelKey: 'moodInspired'},
-  {id: 'angry', emoji: '😤', labelKey: 'moodAngry'},
-  {id: 'weird', emoji: '🤪', labelKey: 'moodWeird'},
-  {id: 'dark', emoji: '🖤', labelKey: 'moodDark'},
+  { id: 'happy', emoji: '😄', labelKey: 'moodHappy' },
+  { id: 'chill', emoji: '😎', labelKey: 'moodChill' },
+  { id: 'romantic', emoji: '🥰', labelKey: 'moodRomantic' },
+  { id: 'sad', emoji: '😢', labelKey: 'moodSad' },
+  { id: 'hyped', emoji: '🤩', labelKey: 'moodHyped' },
+  { id: 'scared', emoji: '😱', labelKey: 'moodScared' },
+  { id: 'cozy', emoji: '☕', labelKey: 'moodCozy' },
+  { id: 'thoughtful', emoji: '🤔', labelKey: 'moodThoughtful' },
+  { id: 'adventurous', emoji: '🧭', labelKey: 'moodAdventurous' },
+  { id: 'fantasy', emoji: '✨', labelKey: 'moodFantasy' },
+  { id: 'crime', emoji: '🕵️', labelKey: 'moodCrime' },
+  { id: 'curious', emoji: '🧐', labelKey: 'moodCurious' },
+  { id: 'nostalgic', emoji: '😌', labelKey: 'moodNostalgic' },
+  { id: 'melancholic', emoji: '😔', labelKey: 'moodMelancholic' },
+  { id: 'playful', emoji: '😜', labelKey: 'moodPlayful' },
+  { id: 'heroic', emoji: '⚔️', labelKey: 'moodHeroic' },
+  { id: 'inspired', emoji: '💡', labelKey: 'moodInspired' },
+  { id: 'angry', emoji: '😤', labelKey: 'moodAngry' },
+  { id: 'weird', emoji: '🤪', labelKey: 'moodWeird' },
+  { id: 'dark', emoji: '🖤', labelKey: 'moodDark' },
 ];
 
 /** Yıl/puan stepper +/−; koyu temada basılıyken sarı (primary) dolgu. */
-function DiscoverStepButton({onPress, colors, theme, label, hitSlop}) {
+function DiscoverStepButton({ onPress, colors, theme, label, hitSlop }) {
   const isDark = isDarkMode(theme);
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
-      hitSlop={hitSlop ?? {top: 8, bottom: 8, left: 8, right: 8}}
+      hitSlop={hitSlop ?? { top: 8, bottom: 8, left: 8, right: 8 }}
       onPress={onPress}
-      style={({pressed}) => [
+      style={({ pressed }) => [
         styles.stepBtn,
         {
           borderColor: colors.border,
@@ -174,25 +182,33 @@ function DiscoverStepButton({onPress, colors, theme, label, hitSlop}) {
             borderColor: colors.primaryDark,
             backgroundColor: colors.primaryDark,
           },
-      ]}>
-      {({pressed}) => (
-        <Text style={[styles.stepGlyph, {color: pressed ? colors.onPrimary : colors.text}]}>{label}</Text>
+      ]}
+    >
+      {({ pressed }) => (
+        <Text
+          style={[
+            styles.stepGlyph,
+            { color: pressed ? colors.onPrimary : colors.text },
+          ]}
+        >
+          {label}
+        </Text>
       )}
     </Pressable>
   );
 }
 
 export function DiscoverScreen() {
-  const {locale, theme} = useSettings();
-  const {hydrated, isLoggedIn, token} = useAuth();
-  const {submitMood} = useProfile();
+  const { locale, theme } = useSettings();
+  const { hydrated, isLoggedIn, token } = useAuth();
+  const { submitMood } = useProfile();
   const colors = getTheme(theme);
   const chipBase = [
     styles.chip,
     {
-      borderWidth: 1,
-      borderColor: colors.primary,
-      backgroundColor: colors.surfaceElevated,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: `${colors.primary}33`,
+      backgroundColor: 'transparent',
     },
   ];
   const route = useRoute();
@@ -211,6 +227,8 @@ export function DiscoverScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [recommendations, setRecommendations] = useState([]);
+  const [aiInsight, setAiInsight] = useState('');
+  const [nightPrompt, setNightPrompt] = useState('');
 
   const initialGenreId = route.params?.initialGenreId;
 
@@ -270,10 +288,12 @@ export function DiscoverScreen() {
 
   useEffect(() => {
     setRecommendations([]);
+    setAiInsight('');
   }, [mood, selectedGenre]);
 
   const clearPicks = useCallback(() => {
     setRecommendations([]);
+    setAiInsight('');
   }, []);
 
   const recommend = async () => {
@@ -281,16 +301,23 @@ export function DiscoverScreen() {
       setError('TMDB_API_KEY_MISSING');
       return;
     }
-    if (!hydrated || !isLoggedIn) {
-      showLoginRequiredAlert(navigation, locale);
-      return;
-    }
     setBusy(true);
     setError(null);
     setRecommendations([]);
+    setAiInsight('');
 
-    let maxParsed = parseYearInput(maxYearText, maxYear, MIN_RELEASE_YEAR, currentCalendarYear);
-    let minParsed = parseYearInput(minYearText, minYear, MIN_RELEASE_YEAR, maxParsed);
+    let maxParsed = parseYearInput(
+      maxYearText,
+      maxYear,
+      MIN_RELEASE_YEAR,
+      currentCalendarYear,
+    );
+    let minParsed = parseYearInput(
+      minYearText,
+      minYear,
+      MIN_RELEASE_YEAR,
+      maxParsed,
+    );
     if (minParsed > maxParsed) {
       maxParsed = minParsed;
     }
@@ -310,9 +337,12 @@ export function DiscoverScreen() {
         'vote_average.gte': voteParsed,
       };
       const startPage = 1 + Math.floor(Math.random() * 5);
-      const pages = Array.from({length: FETCH_PAGE_WINDOW}, (_, i) => startPage + i);
+      const pages = Array.from(
+        { length: FETCH_PAGE_WINDOW },
+        (_, i) => startPage + i,
+      );
       const responses = await Promise.all(
-        pages.map(page => discoverMovies(locale, {...base, page})),
+        pages.map(page => discoverMovies(locale, { ...base, page })),
       );
 
       const seen = new Set();
@@ -332,7 +362,12 @@ export function DiscoverScreen() {
         return;
       }
 
-      const ctx = {targetGenreIds, minYear: minParsed, maxYear: maxParsed, minVote: voteParsed};
+      const ctx = {
+        targetGenreIds,
+        minYear: minParsed,
+        maxYear: maxParsed,
+        minVote: voteParsed,
+      };
       const scored = pool.map(movie => ({
         movie,
         rawBlend: computeDiscoverRawBlend(movie, ctx),
@@ -349,8 +384,82 @@ export function DiscoverScreen() {
         return (b.movie.popularity ?? 0) - (a.movie.popularity ?? 0);
       });
 
-      const top = assignRandomSpreadMatchPercents(scored.slice(0, PICK_COUNT));
-      setRecommendations(top);
+      const localTop = assignRandomSpreadMatchPercents(scored.slice(0, PICK_COUNT));
+      const genreNameById = {};
+      (genres || []).forEach(g => {
+        genreNameById[g.id] = g.name;
+      });
+      try {
+        const ai = await rankDiscoverWithAi({
+          mood,
+          prompt: nightPrompt,
+          locale,
+          minYear: minParsed,
+          maxYear: maxParsed,
+          minVote: voteParsed,
+          candidates: scored.slice(0, 18).map(row => ({
+            id: row.movie.id,
+            title: row.movie.title,
+            year: parseReleaseYear(row.movie),
+            voteAverage: row.movie.vote_average,
+            popularity: row.movie.popularity,
+            overview: row.movie.overview,
+            genres: (row.movie.genre_ids || [])
+              .map(id => genreNameById[id])
+              .filter(Boolean),
+          })),
+        });
+        const byId = new Map(pool.map(m => [Number(m.id), m]));
+        const copyCtx = {locale, mood, prompt: nightPrompt};
+        const withGenresOnMovie = movie => ({
+          ...movie,
+          genres: (movie.genre_ids || [])
+            .map(id => genreNameById[id])
+            .filter(Boolean),
+        });
+        const merged = (ai.picks || [])
+          .map(p => {
+            const movie = byId.get(Number(p.id));
+            if (!movie) {
+              return null;
+            }
+            return {
+              movie: withGenresOnMovie(movie),
+              matchPercent: p.percent,
+              reason: p.reason,
+            };
+          })
+          .filter(Boolean);
+        if (merged.length) {
+          setAiInsight(ai.insight || '');
+          setRecommendations(polishPickReasons(merged, copyCtx));
+        } else {
+          setRecommendations(
+            polishPickReasons(
+              localTop.map(row => ({
+                ...row,
+                movie: withGenresOnMovie(row.movie),
+              })),
+              copyCtx,
+            ),
+          );
+        }
+      } catch {
+        setRecommendations(
+          polishPickReasons(
+            localTop.map(row => ({
+              ...row,
+              movie: {
+                ...row.movie,
+                genres: (row.movie.genre_ids || [])
+                  .map(id => genreNameById[id])
+                  .filter(Boolean),
+              },
+            })),
+            {locale, mood, prompt: nightPrompt},
+          ),
+        );
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'err');
     } finally {
@@ -363,7 +472,9 @@ export function DiscoverScreen() {
     if (which === 'min') {
       setMinYear(v => Math.min(maxYear, Math.max(MIN_RELEASE_YEAR, v + delta)));
     } else {
-      setMaxYear(v => Math.min(currentCalendarYear, Math.max(minYear, v + delta)));
+      setMaxYear(v =>
+        Math.min(currentCalendarYear, Math.max(minYear, v + delta)),
+      );
     }
   };
 
@@ -377,7 +488,12 @@ export function DiscoverScreen() {
   };
 
   const commitMaxYearInput = () => {
-    const y = parseYearInput(maxYearText, maxYear, minYear, currentCalendarYear);
+    const y = parseYearInput(
+      maxYearText,
+      maxYear,
+      minYear,
+      currentCalendarYear,
+    );
     if (y !== maxYear) {
       clearPicks();
     }
@@ -395,24 +511,58 @@ export function DiscoverScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.safe, {backgroundColor: colors.background}]} edges={['top']}>
-      <View style={styles.head}>
-        <Text style={[styles.screenTitle, {color: colors.text}]}>{t(locale, 'discover')}</Text>
-        <Text style={[styles.screenSubtitle, {color: colors.textMuted}]}>{t(locale, 'whatToday')}</Text>
-      </View>
+    <SafeAreaView
+      style={[styles.safe, { backgroundColor: colors.background }]}
+      edges={['top']}
+    >
+      <DiscoverAiHero
+        colors={colors}
+        badge={t(locale, 'discoverAiBadge')}
+        title={t(locale, 'discover')}
+        subtitle={t(locale, 'discoverAiSubtitle')}
+      />
 
       {!hasApiKey() ? (
-        <View style={[styles.banner, {borderColor: colors.primary, backgroundColor: colors.surface}]}>
-          <Text style={{color: colors.text, lineHeight: 20}}>{t(locale, 'missingKeyBody')}</Text>
+        <View
+          style={[
+            styles.banner,
+            { borderColor: colors.primary, backgroundColor: colors.surface },
+          ]}
+        >
+          <Text style={{ color: colors.text, lineHeight: 20 }}>
+            {t(locale, 'missingKeyBody')}
+          </Text>
         </View>
       ) : (
         <ScrollView
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{paddingBottom: 28}}
-          showsVerticalScrollIndicator={false}>
+          contentContainerStyle={{ paddingBottom: 40 }}
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.section}>
-            <Text style={[styles.heading, {color: colors.text}]}>{t(locale, 'moodTitle')}</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hScroll}>
+            <Text style={[styles.kickerHeading, { color: colors.primary }]}>
+              {t(locale, 'moodTitle')}
+            </Text>
+            <TextInput
+              value={nightPrompt}
+              onChangeText={setNightPrompt}
+              placeholder={t(locale, 'discoverAiPromptPlaceholder')}
+              placeholderTextColor={colors.textMuted}
+              multiline
+              style={[
+                styles.promptBox,
+                {
+                  color: colors.text,
+                  borderColor: `${colors.primary}40`,
+                  backgroundColor: colors.surface,
+                },
+              ]}
+            />
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.hScroll}
+            >
               {MOODS.map(m => {
                 const active = mood === m.id;
                 return (
@@ -423,7 +573,7 @@ export function DiscoverScreen() {
                       if (!active) {
                         setMood(m.id);
                         if (hydrated && isLoggedIn && token) {
-                          void submitMood({mood: m.id, context: 'discover'});
+                          void submitMood({ mood: m.id, context: 'discover' });
                         }
                       } else {
                         setMood(null);
@@ -433,20 +583,29 @@ export function DiscoverScreen() {
                       styles.chip,
                       styles.moodChip,
                       active
-                        ? {borderWidth: 1, borderColor: colors.primary, backgroundColor: colors.primary}
-                        : {
-                            borderWidth: 1,
+                        ? {
+                            borderWidth: StyleSheet.hairlineWidth,
                             borderColor: colors.primary,
-                            backgroundColor: colors.surfaceElevated,
+                            backgroundColor: `${colors.primary}22`,
+                          }
+                        : {
+                            borderWidth: StyleSheet.hairlineWidth,
+                            borderColor: `${colors.primary}28`,
+                            backgroundColor: 'transparent',
                           },
-                    ]}>
+                    ]}
+                  >
                     <Text style={styles.moodEmoji}>{m.emoji}</Text>
                     <Text
                       numberOfLines={2}
                       style={[
                         styles.moodChipLabel,
-                        {color: active ? colors.onPrimary : colors.text, fontWeight: active ? '700' : '600'},
-                      ]}>
+                        {
+                          color: active ? colors.primary : colors.textMuted,
+                          fontWeight: active ? '600' : '400',
+                        },
+                      ]}
+                    >
                       {t(locale, m.labelKey)}
                     </Text>
                   </TouchableOpacity>
@@ -456,21 +615,39 @@ export function DiscoverScreen() {
           </View>
 
           <View style={styles.section}>
-            <Text style={[styles.heading, {color: colors.text}]}>{t(locale, 'genre')}</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hScroll}>
+            <Text style={[styles.kickerHeading, { color: colors.primary }]}>
+              {t(locale, 'genre')}
+            </Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.hScroll}
+            >
               <TouchableOpacity
                 activeOpacity={0.88}
                 onPress={() => setSelectedGenre(null)}
                 style={
                   selectedGenre
                     ? chipBase
-                    : [styles.chip, {borderWidth: 1, borderColor: colors.primary, backgroundColor: colors.primary}]
-                }>
+                    : [
+                        styles.chip,
+                        {
+                          borderWidth: StyleSheet.hairlineWidth,
+                          borderColor: colors.primary,
+                          backgroundColor: `${colors.primary}22`,
+                        },
+                      ]
+                }
+              >
                 <Text
                   style={[
                     styles.chipLabel,
-                    {color: selectedGenre ? colors.text : colors.onPrimary, fontWeight: '700'},
-                  ]}>
+                    {
+                      color: selectedGenre ? colors.textMuted : colors.primary,
+                      fontWeight: '500',
+                    },
+                  ]}
+                >
                   {t(locale, 'allGenres')}
                 </Text>
               </TouchableOpacity>
@@ -483,14 +660,26 @@ export function DiscoverScreen() {
                     onPress={() => setSelectedGenre(active ? null : g.id)}
                     style={
                       active
-                        ? [styles.chip, {borderWidth: 1, borderColor: colors.primary, backgroundColor: colors.primary}]
+                        ? [
+                            styles.chip,
+                            {
+                              borderWidth: StyleSheet.hairlineWidth,
+                              borderColor: colors.primary,
+                              backgroundColor: `${colors.primary}22`,
+                            },
+                          ]
                         : chipBase
-                    }>
+                    }
+                  >
                     <Text
                       style={[
                         styles.chipLabel,
-                        {color: active ? colors.onPrimary : colors.text, fontWeight: active ? '700' : '600'},
-                      ]}>
+                        {
+                          color: active ? colors.primary : colors.textMuted,
+                          fontWeight: active ? '600' : '400',
+                        },
+                      ]}
+                    >
                       {g.name}
                     </Text>
                   </TouchableOpacity>
@@ -500,10 +689,23 @@ export function DiscoverScreen() {
           </View>
 
           <View style={styles.section}>
-            <Text style={[styles.heading, {color: colors.text}]}>{t(locale, 'discoverTuneTitle')}</Text>
+            <Text style={[styles.kickerHeading, { color: colors.primary }]}>
+              {t(locale, 'discoverTuneTitle')}
+            </Text>
 
+            <View
+              style={[
+                styles.tunePanel,
+                {
+                  borderColor: `${colors.primary}28`,
+                  backgroundColor: colors.surface,
+                },
+              ]}
+            >
             <View style={styles.filterRow}>
-              <Text style={[styles.rowLabel, {color: colors.text}]}>{t(locale, 'yearFrom')}</Text>
+              <Text style={[styles.rowLabel, { color: colors.text }]}>
+                {t(locale, 'yearFrom')}
+              </Text>
               <View style={styles.stepper}>
                 <DiscoverStepButton
                   theme={theme}
@@ -541,7 +743,9 @@ export function DiscoverScreen() {
             </View>
 
             <View style={styles.filterRow}>
-              <Text style={[styles.rowLabel, {color: colors.text}]}>{t(locale, 'yearTo')}</Text>
+              <Text style={[styles.rowLabel, { color: colors.text }]}>
+                {t(locale, 'yearTo')}
+              </Text>
               <View style={styles.stepper}>
                 <DiscoverStepButton
                   theme={theme}
@@ -579,7 +783,9 @@ export function DiscoverScreen() {
             </View>
 
             <View style={[styles.filterRow, styles.filterRowLast]}>
-              <Text style={[styles.rowLabel, {color: colors.text}]}>{t(locale, 'minRating')}</Text>
+              <Text style={[styles.rowLabel, { color: colors.text }]}>
+                {t(locale, 'minRating')}
+              </Text>
               <View style={styles.stepper}>
                 <DiscoverStepButton
                   theme={theme}
@@ -587,7 +793,9 @@ export function DiscoverScreen() {
                   label="-"
                   onPress={() => {
                     clearPicks();
-                    setMinVote(v => Math.max(0, Math.round((v - 0.5) * 10) / 10));
+                    setMinVote(v =>
+                      Math.max(0, Math.round((v - 0.5) * 10) / 10),
+                    );
                   }}
                 />
                 <TextInput
@@ -616,20 +824,41 @@ export function DiscoverScreen() {
                   label="+"
                   onPress={() => {
                     clearPicks();
-                    setMinVote(v => Math.min(10, Math.round((v + 0.5) * 10) / 10));
+                    setMinVote(v =>
+                      Math.min(10, Math.round((v + 0.5) * 10) / 10),
+                    );
                   }}
                 />
               </View>
             </View>
+            </View>
           </View>
 
           {error === 'empty' ? (
-            <View style={[styles.note, {borderColor: colors.border, backgroundColor: colors.surface}]}>
-              <Text style={{color: colors.pass, fontWeight: '600', fontSize: 14}}>{t(locale, 'noResults')}</Text>
+            <View
+              style={[
+                styles.note,
+                { borderColor: colors.border, backgroundColor: colors.surface },
+              ]}
+            >
+              <Text
+                style={{ color: colors.pass, fontWeight: '600', fontSize: 14 }}
+              >
+                {t(locale, 'noResults')}
+              </Text>
             </View>
           ) : error ? (
-            <View style={[styles.note, {borderColor: colors.border, backgroundColor: colors.surface}]}>
-              <Text style={{color: colors.pass, fontWeight: '600', fontSize: 14}}>{t(locale, 'error')}</Text>
+            <View
+              style={[
+                styles.note,
+                { borderColor: colors.border, backgroundColor: colors.surface },
+              ]}
+            >
+              <Text
+                style={{ color: colors.pass, fontWeight: '600', fontSize: 14 }}
+              >
+                {t(locale, 'error')}
+              </Text>
             </View>
           ) : null}
 
@@ -639,46 +868,125 @@ export function DiscoverScreen() {
             onPress={() => void recommend()}
             style={[
               styles.heroCta,
-              {backgroundColor: colors.primary, opacity: busy ? 0.65 : 1},
-              shadow.hero,
-            ]}>
+              {
+                backgroundColor: colors.primary,
+                opacity: busy ? 0.7 : 1,
+              },
+            ]}
+          >
             {busy ? (
               <ActivityIndicator color={colors.onPrimary} />
             ) : (
-              <Text style={[styles.heroCtaText, {color: colors.onPrimary}]}>{t(locale, 'recommend')}</Text>
+              <Text style={[styles.heroCtaText, { color: colors.onPrimary }]}>
+                ✦  {t(locale, 'recommend')}
+              </Text>
             )}
           </TouchableOpacity>
 
-          {recommendations.length === 0 && !busy ? (
-            <Text style={[styles.hint, {color: colors.textMuted}]}>{t(locale, 'pickForYou')}</Text>
+          {busy ? (
+            <DiscoverThinking
+              colors={colors}
+              kicker={t(locale, 'discoverAiThinking')}
+              steps={[
+                t(locale, 'discoverAiStepScan'),
+                t(locale, 'discoverAiStepMood'),
+                t(locale, 'discoverAiStepPool'),
+                t(locale, 'discoverAiStepRank'),
+              ]}
+            />
           ) : null}
 
-          {recommendations.length > 0 ? (
+          {recommendations.length === 0 && !busy ? (
+            <Text style={[styles.hint, { color: colors.textMuted }]}>
+              {t(locale, 'pickForYou')}
+            </Text>
+          ) : null}
+
+          {aiInsight && !busy ? (
+            <View
+              style={[
+                styles.insightCard,
+                {
+                  borderColor: `${colors.primary}40`,
+                  backgroundColor: colors.surface,
+                },
+              ]}
+            >
+              <Text style={[styles.insightKicker, { color: colors.primary }]}>
+                {t(locale, 'discoverAiInsightTitle')}
+              </Text>
+              <Text style={[styles.insightBody, { color: colors.text }]}>
+                {aiInsight}
+              </Text>
+            </View>
+          ) : null}
+
+          {recommendations.length > 0 && !busy ? (
             <View style={styles.section}>
-              <Text style={[styles.heading, {color: colors.text}]}>{t(locale, 'discoverPicksTitle')}</Text>
-              {recommendations.map(({movie, matchPercent}) => (
+              <Text style={[styles.kickerHeading, { color: colors.primary }]}>
+                {t(locale, 'discoverPicksTitle')}
+              </Text>
+              {recommendations.map(({ movie, matchPercent, reason }, index) => (
                 <TouchableOpacity
                   key={movie.id}
                   activeOpacity={0.88}
-                  onPress={() => navigation.navigate('MovieDetail', {movieId: movie.id})}
-                  style={styles.pickRow}>
-                  <View style={[shadow.poster, {borderRadius: 14, backgroundColor: '#000'}]}>
-                    <View style={styles.pickPosterFrame}>
-                      <PosterImage posterPath={movie.poster_path} colors={colors} size="small" />
-                    </View>
+                  onPress={() =>
+                    navigation.navigate('MovieDetail', { movieId: movie.id })
+                  }
+                  style={[
+                    styles.pickCard,
+                    {
+                      borderColor:
+                        index === 0 ? `${colors.primary}66` : `${colors.primary}22`,
+                      backgroundColor: colors.surface,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.pickIndex, { color: `${colors.primary}99` }]}>
+                    {String(index + 1).padStart(2, '0')}
+                  </Text>
+                  <View style={[styles.pickPosterFrame, shadow.poster]}>
+                    <PosterImage
+                      posterPath={movie.poster_path}
+                      colors={colors}
+                      size="small"
+                    />
                   </View>
                   <View style={styles.pickBody}>
-                    <Text numberOfLines={2} style={[styles.pickTitle, {color: colors.text}]}>
-                      {movie.title}
-                    </Text>
-                    <Text style={[styles.pickMeta, {color: colors.textMuted}]}>
+                    <View style={styles.pickTop}>
+                      <Text
+                        numberOfLines={2}
+                        style={[styles.pickTitle, { color: colors.text, flex: 1 }]}
+                      >
+                        {movie.title}
+                      </Text>
+                      <View
+                        style={[
+                          styles.fitPill,
+                          { borderColor: `${colors.primary}88` },
+                        ]}
+                      >
+                        <Text
+                          style={[styles.fitPillText, { color: colors.primary }]}
+                        >
+                          {matchPercent}%
+                        </Text>
+                      </View>
+                    </View>
+                    <Text
+                      style={[styles.pickMeta, { color: colors.textMuted }]}
+                    >
                       ★ {(movie.vote_average ?? 0).toFixed(1)}
                     </Text>
-                    <Text style={[styles.pickFit, {color: colors.textMuted}]}>
-                      {matchPercent}% {t(locale, 'discoverFitLabel')}
-                    </Text>
+                    {reason ? (
+                      <Text
+                        numberOfLines={4}
+                        style={[styles.pickReason, { color: colors.textMuted }]}
+                      >
+                        {reason}
+                      </Text>
+                    ) : null}
                   </View>
-                  <Text style={[styles.pickArrow, {color: colors.textMuted}]}>→</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -690,120 +998,214 @@ export function DiscoverScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: {flex: 1},
+  safe: { flex: 1 },
   head: {
     paddingHorizontal: 16,
     paddingTop: 4,
     paddingBottom: 10,
   },
-  screenTitle: {fontSize: 22, fontWeight: '800', letterSpacing: -0.3},
-  screenSubtitle: {marginTop: 4, fontSize: 14, fontWeight: '600', lineHeight: 19},
-  banner: {marginHorizontal: 16, marginTop: 4, padding: 16, borderRadius: 16, borderWidth: 1},
-  section: {marginBottom: 22},
+  screenTitle: { fontSize: 22, fontWeight: '800', letterSpacing: -0.3 },
+  screenSubtitle: {
+    marginTop: 4,
+    fontSize: 14,
+    fontWeight: '600',
+    lineHeight: 19,
+  },
+  banner: {
+    marginHorizontal: 16,
+    marginTop: 4,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  section: { marginBottom: 28 },
   heading: {
     fontSize: 19,
     fontWeight: '800',
     letterSpacing: -0.2,
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     marginBottom: 12,
   },
-  hScroll: {paddingHorizontal: 16, gap: 10, alignItems: 'center'},
+  kickerHeading: {
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 2.6,
+    paddingHorizontal: 20,
+    marginBottom: 14,
+  },
+  promptBox: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+    minHeight: 64,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 15,
+    fontWeight: '400',
+    lineHeight: 22,
+    textAlignVertical: 'top',
+  },
+  insightCard: {
+    marginHorizontal: 20,
+    marginBottom: 20,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+  },
+  insightKicker: {
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 2.4,
+    marginBottom: 8,
+  },
+  insightBody: { fontSize: 15, fontWeight: '400', lineHeight: 23, letterSpacing: 0.15 },
+  hScroll: { paddingHorizontal: 20, gap: 10, alignItems: 'center' },
   chip: {
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 9,
     borderRadius: 999,
   },
   moodChip: {
-    minWidth: 96,
-    maxWidth: 112,
+    minWidth: 88,
+    maxWidth: 104,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 8,
   },
-  moodEmoji: {fontSize: 24, lineHeight: 28},
+  moodEmoji: { fontSize: 22, lineHeight: 26 },
   moodChipLabel: {
-    marginTop: 6,
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: -0.1,
+    marginTop: 8,
+    fontSize: 11,
+    fontWeight: '400',
+    letterSpacing: 0.4,
     textAlign: 'center',
-    lineHeight: 15,
+    lineHeight: 14,
   },
-  chipLabel: {fontSize: 14, fontWeight: '600', letterSpacing: -0.15},
+  chipLabel: { fontSize: 13, fontWeight: '400', letterSpacing: 0.3 },
+  tunePanel: {
+    marginHorizontal: 20,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+  },
   filterRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    marginBottom: 14,
+    paddingHorizontal: 2,
+    marginBottom: 12,
   },
-  filterRowLast: {marginBottom: 0},
-  rowLabel: {fontSize: 15, fontWeight: '600', flex: 1, marginRight: 12},
-  stepper: {flexDirection: 'row', alignItems: 'center', gap: 10},
+  filterRowLast: { marginBottom: 4 },
+  rowLabel: { fontSize: 14, fontWeight: '400', flex: 1, marginRight: 12, letterSpacing: 0.2 },
+  stepper: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   stepBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    borderWidth: 1,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  stepGlyph: {fontSize: 20, fontWeight: '700'},
-  stepValue: {fontSize: 17, fontWeight: '800', minWidth: 56, textAlign: 'center'},
-  stepValueInput: {
-    minWidth: 64,
-    maxWidth: 80,
-    paddingVertical: 10,
-    paddingHorizontal: 6,
-    borderRadius: 12,
-    borderWidth: 1,
-    fontSize: 17,
-    fontWeight: '800',
+  stepGlyph: { fontSize: 18, fontWeight: '400' },
+  stepValue: {
+    fontSize: 16,
+    fontWeight: '500',
+    minWidth: 56,
     textAlign: 'center',
   },
+  stepValueInput: {
+    minWidth: 62,
+    maxWidth: 76,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    fontSize: 16,
+    fontWeight: '500',
+    textAlign: 'center',
+    letterSpacing: 0.6,
+  },
   note: {
-    marginHorizontal: 16,
+    marginHorizontal: 20,
     marginBottom: 12,
     padding: 14,
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
   },
   heroCta: {
-    marginHorizontal: 16,
-    marginBottom: 10,
-    paddingVertical: 18,
+    marginHorizontal: 20,
+    marginBottom: 14,
+    paddingVertical: 16,
     paddingHorizontal: 16,
-    borderRadius: 18,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  heroCtaText: {fontSize: 17, fontWeight: '800', letterSpacing: -0.15},
+  heroCtaText: { fontSize: 14, fontWeight: '600', letterSpacing: 1.8 },
   hint: {
-    marginHorizontal: 16,
-    marginTop: 2,
-    fontSize: 14,
-    fontWeight: '600',
+    marginHorizontal: 28,
+    marginTop: 4,
+    fontSize: 13,
+    fontWeight: '400',
     lineHeight: 20,
     textAlign: 'center',
+    letterSpacing: 0.2,
   },
-  pickRow: {
+  pickCard: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    gap: 14,
+    alignItems: 'flex-start',
+    marginHorizontal: 20,
+    marginBottom: 14,
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: 12,
+  },
+  pickIndex: {
+    fontSize: 10,
+    fontWeight: '500',
+    letterSpacing: 1.6,
+    marginTop: 4,
+    width: 22,
+  },
+  pickTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  fitPill: {
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  fitPillText: { fontSize: 11, fontWeight: '500', letterSpacing: 0.6 },
+  pickReason: {
+    marginTop: 8,
+    fontSize: 13,
+    fontWeight: '400',
+    lineHeight: 19,
+    letterSpacing: 0.15,
   },
   pickPosterFrame: {
-    width: 72,
+    width: 78,
     aspectRatio: 2 / 3,
-    borderRadius: 14,
+    borderRadius: 10,
     overflow: 'hidden',
     backgroundColor: '#000',
   },
-  pickBody: {flex: 1, minWidth: 0},
-  pickTitle: {fontSize: 14, fontWeight: '700', letterSpacing: -0.2, lineHeight: 19},
-  pickMeta: {marginTop: 4, fontSize: 13, fontWeight: '600'},
-  pickFit: {marginTop: 4, fontSize: 13, fontWeight: '600'},
-  pickArrow: {fontSize: 22, fontWeight: '700', paddingLeft: 4},
+  pickBody: { flex: 1, minWidth: 0 },
+  pickTitle: {
+    fontSize: 16,
+    fontWeight: '500',
+    letterSpacing: 0.2,
+    lineHeight: 21,
+  },
+  pickMeta: { marginTop: 4, fontSize: 12, fontWeight: '400', letterSpacing: 0.4 },
+  pickFit: { marginTop: 4, fontSize: 13, fontWeight: '600' },
+  pickArrow: { fontSize: 22, fontWeight: '700', paddingLeft: 4 },
 });

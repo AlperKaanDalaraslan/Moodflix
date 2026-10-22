@@ -14,7 +14,6 @@ import {
   ActivityIndicator,
   Animated,
   PanResponder,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -38,12 +37,10 @@ import {
 import { PosterImage } from '../components/PosterImage';
 import { TrailerModal } from '../components/TrailerModal';
 import { YoutubeEmbed } from '../components/YoutubeEmbed';
-import { useAuth } from '../context/AuthContext';
 import { useFavorites } from '../context/FavoritesContext';
 import { useSettings } from '../context/SettingsContext';
 import { t } from '../i18n/translations';
 import { getTheme } from '../theme/colors';
-import { showLoginRequiredAlert } from '../utils/authGate';
 
 /** Aynı sayfada hep aynı sırada gelmesin */
 function shuffleArray(items) {
@@ -75,49 +72,27 @@ async function fetchSwipeFeedPage(locale) {
 }
 
 /**
- * Fragman var: özet yok → ince bilgi şeridi; kalan yükseklik videoda (coverZoom ile dolar).
- * Sadece poster: geniş metin alanı (scroll).
- *
- * @param {number} contentH — SafeAreaView içi yükseklik (üst inset zaten uygulanmış)
+ * Her kart aynı: 16:9 medya + sabit bilgi şeridi. YouTube’a fazla yükseklik vermeyince
+ * kanal başlığı / öneri şeridi çıkmaz.
  */
-function computeSwipeMetrics(contentH, winW, insetBottom, hasTrailer, noTrailerKnown) {
+function computeSwipeMetrics(contentH, winW, insetBottom) {
   const CARD_W = Math.min(404, Math.round(winW * 0.946));
-  const poster16 = Math.round((CARD_W * 9) / 16);
-  /** Gerçek `screenHeader`: başlık + 2 satır ipucu + padding */
+  const infoH = 112;
   const headerBlock = 88;
-  /** `deckSlot` arkadaki kartlar için +22 */
   const deckPeek = 22;
-  /** `styles.actions`: marginTop 10 + daire 64 + paddingBottom (home indicator) */
   const actionsRowH = 10 + 64 + Math.max(insetBottom, 10) + 6;
-  const gap = 8;
-  const reserved = headerBlock + deckPeek + actionsRowH + gap;
-  const available = Math.max(120, Math.floor(contentH - reserved));
-  const maxCard = Math.min(Math.floor(contentH * 0.82), available);
-
-  if (hasTrailer) {
-    /** Başlık (2 satır) + meta + puan + Fragman; 108’de ScrollView ile düğme kırpılıyordu */
-    const infoH = 140;
-    const posterH = Math.max(poster16, maxCard - infoH);
-    const cardH = posterH + infoH;
-    return {
-      CARD_W,
-      CARD_H: cardH,
-      POSTER_CLIP_H: posterH,
-      INFO_BLOCK_H: infoH,
-      SWIPE_OUT: winW * 1.25,
-    };
+  const reserved = headerBlock + deckPeek + actionsRowH + 8;
+  const available = Math.max(200, Math.floor(contentH - reserved));
+  let mediaH = Math.round((CARD_W * 9) / 16);
+  let width = CARD_W;
+  if (mediaH + infoH > available) {
+    mediaH = Math.max(168, available - infoH);
+    width = Math.min(CARD_W, Math.round((mediaH * 16) / 9));
   }
-
-  const minInfo = 96;
-  /** TMDB’de fragman yok: dev metin alanı boş gri bırakıyordu */
-  const maxInfo = noTrailerKnown ? 200 : 272;
-  const wantInfo = available - poster16;
-  const infoH = Math.min(maxInfo, Math.max(minInfo, wantInfo));
-  const cardH = poster16 + infoH;
   return {
-    CARD_W,
-    CARD_H: cardH,
-    POSTER_CLIP_H: poster16,
+    CARD_W: width,
+    CARD_H: mediaH + infoH,
+    POSTER_CLIP_H: mediaH,
     INFO_BLOCK_H: infoH,
     SWIPE_OUT: winW * 1.25,
   };
@@ -138,16 +113,21 @@ function SwipeCard({
   locale,
   genreById,
   trailerKey,
-  trailerLoading,
   trailerModalOpen,
   showEmbed,
   trailerSurfaceBusy,
   onEmbedShellLoadEnd,
-  metrics,
   onOpenTrailerModal,
+  metrics,
   onResult,
 }) {
   const tx = useRef(new Animated.Value(0)).current;
+  const movieRef = useRef(movie);
+  const onResultRef = useRef(onResult);
+  const swipeOutRef = useRef(metrics.SWIPE_OUT);
+  movieRef.current = movie;
+  onResultRef.current = onResult;
+  swipeOutRef.current = metrics.SWIPE_OUT;
 
   const rotateZ = useMemo(
     () =>
@@ -159,66 +139,81 @@ function SwipeCard({
     [tx],
   );
 
-  const stampOpacity = useMemo(
+  const likeStampOpacity = useMemo(
     () =>
       tx.interpolate({
-        inputRange: [-180, -50, 0, 50, 180],
-        outputRange: [1, 0.15, 0, 0.6, 1],
+        inputRange: [-120, -36, 0],
+        outputRange: [1, 0.35, 0],
         extrapolate: 'clamp',
       }),
     [tx],
   );
 
-  const panResponder = useMemo(
+  const passStampOpacity = useMemo(
     () =>
+      tx.interpolate({
+        inputRange: [0, 36, 120],
+        outputRange: [0, 0.35, 1],
+        extrapolate: 'clamp',
+      }),
+    [tx],
+  );
+
+  const pansRef = useRef(null);
+  if (pansRef.current == null) {
+    const makePan = captureStart =>
       PanResponder.create({
+        onStartShouldSetPanResponder: () => captureStart,
+        onStartShouldSetPanResponderCapture: () => captureStart,
         onMoveShouldSetPanResponder: (_, g) =>
-          Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) + 6,
-        /** Dikey scroll (özet) ile çakışmasın; yatay baskın kaydırma */
+          Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy) * 0.65,
         onMoveShouldSetPanResponderCapture: (_, g) =>
-          Math.abs(g.dx) > 16 && Math.abs(g.dx) > Math.abs(g.dy) + 8,
+          Math.abs(g.dx) > 10 && Math.abs(g.dx) > Math.abs(g.dy) * 0.65,
+        onPanResponderTerminationRequest: () => false,
+        onShouldBlockNativeResponder: () => true,
         onPanResponderMove: (_, g) => {
           tx.setValue(g.dx);
         },
         onPanResponderRelease: (_, g) => {
-          const threshold = 110;
+          const threshold = 56;
           const vx = g.vx ?? 0;
-          /** Hızlı fırlatma: dx eşiğe yetişmese bile sağ/sol kararını kaçırmayalım */
-          const passRight = g.dx > threshold || (g.dx > 52 && vx > 0.82);
-          const passLeft = g.dx < -threshold || (g.dx < -52 && vx < -0.82);
-          if (passRight) {
+          const passRight = g.dx > threshold || (g.dx > 28 && vx > 0.28);
+          const passLeft = g.dx < -threshold || (g.dx < -28 && vx < -0.28);
+          if (passRight || passLeft) {
+            /** Sağ el: sola atmak (dx < 0) beğeni, sağa itmek geç */
+            const action = passLeft ? 'like' : 'pass';
+            const out = swipeOutRef.current;
+            onResultRef.current(action, movieRef.current);
             Animated.spring(tx, {
-              toValue: metrics.SWIPE_OUT,
+              toValue: passRight ? out : -out,
               useNativeDriver: true,
               friction: 7,
               tension: 40,
-            }).start(() => {
-              onResult('right', movie);
-            });
-          } else if (passLeft) {
-            Animated.spring(tx, {
-              toValue: -metrics.SWIPE_OUT,
-              useNativeDriver: true,
-              friction: 7,
-              tension: 40,
-            }).start(() => {
-              onResult('left', movie);
-            });
-          } else {
-            Animated.spring(tx, {
-              toValue: 0,
-              useNativeDriver: true,
-              friction: 6,
             }).start();
+            return;
           }
+          Animated.spring(tx, {
+            toValue: 0,
+            useNativeDriver: true,
+            friction: 6,
+          }).start();
         },
-      }),
-    [metrics.SWIPE_OUT, movie, onResult, tx],
-  );
+        onPanResponderTerminate: () => {
+          Animated.spring(tx, {
+            toValue: 0,
+            useNativeDriver: true,
+            friction: 6,
+          }).start();
+        },
+      });
+    pansRef.current = {
+      card: makePan(false),
+      video: makePan(true),
+    };
+  }
 
   const year = movie.release_date ? movie.release_date.slice(0, 4) : null;
   const genres = genreLine(movie, genreById);
-  const overview = (movie.overview ?? '').trim();
 
   return (
     <Animated.View
@@ -229,7 +224,7 @@ function SwipeCard({
       ]}
     >
       <View
-        {...panResponder.panHandlers}
+        {...pansRef.current.card.panHandlers}
         style={[
           styles.cardPanSurface,
           { backgroundColor: colors.surface, borderColor: colors.border },
@@ -242,7 +237,7 @@ function SwipeCard({
                 posterPath={movie.poster_path}
                 colors={colors}
                 size="backdrop"
-                resizeMode="contain"
+                resizeMode="cover"
               />
             ) : (
               <View style={styles.mediaShellInner}>
@@ -255,7 +250,8 @@ function SwipeCard({
                     coverZoom
                     loop
                     autoPlay
-                    cinemaMode
+                    captionsOn
+                    captionLang={String(locale || 'tr').startsWith('tr') ? 'tr' : 'en'}
                     muted={false}
                     controls={false}
                     passThroughTouches
@@ -266,7 +262,7 @@ function SwipeCard({
                     posterPath={movie.poster_path}
                     colors={colors}
                     size="backdrop"
-                    resizeMode="contain"
+                    resizeMode="cover"
                   />
                 ) : null}
                 {trailerSurfaceBusy ? (
@@ -277,15 +273,45 @@ function SwipeCard({
               </View>
             )}
           </View>
+          <View
+            {...pansRef.current.video.panHandlers}
+            style={styles.swipeCatcher}
+          />
+          {trailerKey && !trailerModalOpen ? (
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel={t(locale, 'trailer')}
+              activeOpacity={0.85}
+              onPress={onOpenTrailerModal}
+              style={[styles.expandBtn, {backgroundColor: 'rgba(0,0,0,0.55)'}]}
+              hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}
+            >
+              <Text style={[styles.expandGlyph, {color: colors.text}]}>⤢</Text>
+            </TouchableOpacity>
+          ) : null}
           <Animated.View
             pointerEvents="none"
             style={[
-              styles.stamp,
+              styles.stampLike,
               { borderColor: colors.like, backgroundColor: colors.surface },
-              { opacity: stampOpacity },
+              { opacity: likeStampOpacity },
             ]}
           >
-            <Text style={{ color: colors.like, fontWeight: '900' }}>LIKE</Text>
+            <Text style={{ color: colors.like, fontWeight: '900' }}>
+              {t(locale, 'swipeStampLike')}
+            </Text>
+          </Animated.View>
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.stampPass,
+              { borderColor: colors.pass, backgroundColor: colors.surface },
+              { opacity: passStampOpacity },
+            ]}
+          >
+            <Text style={{ color: colors.pass, fontWeight: '900' }}>
+              {t(locale, 'swipeStampPass')}
+            </Text>
           </Animated.View>
         </View>
 
@@ -316,37 +342,6 @@ function SwipeCard({
           <Text style={[styles.rating, { color: colors.textMuted }]}>
             ★ {movie.vote_average.toFixed(1)}
           </Text>
-          {trailerLoading ? (
-            <Text
-              numberOfLines={1}
-              style={[styles.trailerCheckingLine, { color: colors.textMuted }]}
-            >
-              {t(locale, 'trailerChecking')}
-            </Text>
-          ) : trailerKey ? (
-            <TouchableOpacity
-              onPress={onOpenTrailerModal}
-              activeOpacity={0.85}
-              style={[styles.trailerBtn, { backgroundColor: colors.primary }]}
-              hitSlop={{ top: 6, bottom: 6, left: 8, right: 8 }}
-            >
-              <Text
-                style={[styles.trailerBtnText, { color: colors.onPrimary }]}
-              >
-                ▶ {t(locale, 'trailer')}
-              </Text>
-            </TouchableOpacity>
-          ) : null}
-          {overview && !showEmbed ? (
-            <ScrollView
-              style={styles.infoScroll}
-              contentContainerStyle={styles.infoScrollContent}
-              showsVerticalScrollIndicator={false}
-              nestedScrollEnabled
-            >
-              <Text style={[styles.overview, { color: colors.text }]}>{overview}</Text>
-            </ScrollView>
-          ) : null}
         </View>
       </View>
     </Animated.View>
@@ -359,10 +354,11 @@ export function SwipeScreen() {
   const colors = getTheme(theme);
   const insets = useSafeAreaInsets();
   const { width: winW, height: winH } = useWindowDimensions();
-  const { hydrated, isLoggedIn } = useAuth();
-  const { toggleFavorite, isFavorite } = useFavorites();
+  const { addFavorite } = useFavorites();
   /** Tab sahnesi gerçek yüksekliği (`useWindowDimensions` tab bar hariç değil) */
   const [tabBodyH, setTabBodyH] = useState(null);
+  const [addedBanner, setAddedBanner] = useState('');
+  const addedBannerTimer = useRef(null);
 
   const [deck, setDeck] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -410,20 +406,9 @@ export function SwipeScreen() {
     return Math.max(240, winH - insets.top - tabBarH);
   }, [tabBodyH, winH, insets.top, insets.bottom]);
 
-  const noTrailerKnown = Boolean(
-    top && hasApiKey() && trailerFetchDoneId === top.id && !trailerKey,
-  );
-
   const metrics = useMemo(
-    () =>
-      computeSwipeMetrics(
-        contentH,
-        winW,
-        insets.bottom,
-        Boolean(top && (trailerKey || trailerLoading)),
-        noTrailerKnown,
-      ),
-    [contentH, top, trailerKey, trailerLoading, noTrailerKnown, winW, insets.bottom],
+    () => computeSwipeMetrics(contentH, winW, insets.bottom),
+    [contentH, winW, insets.bottom],
   );
 
   const loadMore = useCallback(
@@ -556,13 +541,20 @@ export function SwipeScreen() {
       if (!m) {
         return;
       }
-      if (dir === 'right') {
-        if (!hydrated || !isLoggedIn) {
-          showLoginRequiredAlert(navigation, locale);
-          return;
-        }
-        if (!isFavorite(m.id)) {
-          toggleFavorite(m);
+      if (dir === 'like') {
+        const ok = addFavorite({
+          id: m.id,
+          title: m.title,
+          poster_path: m.poster_path ?? m.backdrop_path ?? null,
+        });
+        if (ok) {
+          setAddedBanner(t(locale, 'swipeAddedFavorite'));
+          if (addedBannerTimer.current) {
+            clearTimeout(addedBannerTimer.current);
+          }
+          addedBannerTimer.current = setTimeout(() => {
+            setAddedBanner('');
+          }, 1400);
         }
       }
       setDeck(d => {
@@ -573,7 +565,7 @@ export function SwipeScreen() {
         return d.slice(1);
       });
     },
-    [hydrated, isLoggedIn, isFavorite, locale, navigation, toggleFavorite, top],
+    [addFavorite, locale, top],
   );
 
   useEffect(() => {
@@ -606,6 +598,11 @@ export function SwipeScreen() {
           >
             {t(locale, 'swipeHint')}
           </Text>
+          {addedBanner ? (
+            <Text style={[styles.addedBanner, { color: colors.primary }]}>
+              {addedBanner}
+            </Text>
+          ) : null}
         </View>
 
         {!hasApiKey() ? (
@@ -699,7 +696,6 @@ export function SwipeScreen() {
                 locale={locale}
                 genreById={genreById}
                 trailerKey={trailerKey}
-                trailerLoading={trailerLoading}
                 trailerModalOpen={trailerModalOpen}
                 showEmbed={showEmbed}
                 trailerSurfaceBusy={trailerSurfaceBusy}
@@ -717,7 +713,7 @@ export function SwipeScreen() {
               ]}
             >
               <TouchableOpacity
-                onPress={() => onSwipe('left', top)}
+                onPress={() => onSwipe('pass', top)}
                 style={[
                   styles.circle,
                   {
@@ -737,7 +733,7 @@ export function SwipeScreen() {
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => onSwipe('right', top)}
+                onPress={() => onSwipe('like', top)}
                 style={[
                   styles.circle,
                   {
@@ -783,6 +779,11 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     fontWeight: '600',
     opacity: 0.9,
+  },
+  addedBanner: {
+    marginTop: 6,
+    fontSize: 13,
+    fontWeight: '800',
   },
   deckColumn: {
     flex: 1,
@@ -837,6 +838,27 @@ const styles = StyleSheet.create({
     width: '100%',
     overflow: 'hidden',
     backgroundColor: '#000',
+  },
+  swipeCatcher: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 20,
+    backgroundColor: 'transparent',
+  },
+  expandBtn: {
+    position: 'absolute',
+    right: 10,
+    bottom: 10,
+    zIndex: 30,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  expandGlyph: {
+    fontSize: 20,
+    fontWeight: '600',
+    marginTop: -1,
   },
   /** Clip’ten yüksek tutulur; poster/video genişlikte dolsun */
   mediaShell: {
@@ -918,7 +940,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
   },
-  stamp: {
+  stampLike: {
     position: 'absolute',
     top: 16,
     left: 16,
@@ -927,6 +949,16 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 2,
     transform: [{ rotateZ: '-12deg' }],
+  },
+  stampPass: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 2,
+    transform: [{ rotateZ: '12deg' }],
   },
   actions: {
     marginTop: 10,

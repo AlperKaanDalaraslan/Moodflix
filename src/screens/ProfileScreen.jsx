@@ -1,8 +1,6 @@
 import {useNavigation} from '@react-navigation/native';
 import React, {useCallback, useLayoutEffect, useMemo, useState} from 'react';
 import {
-  ActivityIndicator,
-  Alert,
   FlatList,
   Modal,
   Pressable,
@@ -15,21 +13,10 @@ import {
   View,
 } from 'react-native';
 import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
-import {PosterImage} from '../components/PosterImage';
-import {useAuth} from '../context/AuthContext';
-import {useProfile} from '../context/ProfileContext';
 import {useSettings} from '../context/SettingsContext';
 import {TMDB_CONTENT_LOCALES} from '../i18n/contentLocales';
 import {t} from '../i18n/translations';
-import {getTheme, isDarkMode} from '../theme/colors';
-import {
-  getAvatarInitials,
-  initialsAvatarPalette,
-  isMoviePosterAvatarToken,
-  parseMoviePosterAvatarToken,
-  sanitizeAvatarForUi,
-} from '../utils/avatarDisplay';
-import {normalizeServerMovie} from '../utils/profileMovie';
+import {getTheme} from '../theme/colors';
 
 const PAD = 18;
 
@@ -38,15 +25,9 @@ export function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const {height: winH} = useWindowDimensions();
   const {locale, theme, setLocale, shakeThemeEnabled, setShakeThemeEnabled} = useSettings();
-  const {isLoggedIn, user, logout} = useAuth();
-  const {profile, insights, loading, error, refreshProfile} = useProfile();
   const colors = getTheme(theme);
-  const darkMode = isDarkMode(theme);
   const [langOpen, setLangOpen] = useState(false);
   const sheetHeight = Math.round(winH * 0.86);
-
-  const heroBandBg =
-    darkMode ? 'rgba(245, 197, 24, 0.07)' : 'rgba(230, 172, 0, 0.1)';
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -59,29 +40,6 @@ export function ProfileScreen() {
     () => TMDB_CONTENT_LOCALES.find(x => x.code === locale) ?? TMDB_CONTENT_LOCALES[0],
     [locale],
   );
-
-  const displayName = profile?.name || user?.username || user?.name || user?.email || '—';
-  const headline =
-    typeof insights?.headlineGenre === 'string' ? insights.headlineGenre : null;
-  const headlinePct =
-    typeof insights?.headlinePercent === 'number'
-      ? Math.round(insights.headlinePercent)
-      : insights?.headlinePercent != null
-        ? Number(insights.headlinePercent)
-        : null;
-
-  const onLogout = useCallback(() => {
-    Alert.alert(t(locale, 'authLogout'), t(locale, 'authLogoutConfirm'), [
-      {text: t(locale, 'close'), style: 'cancel'},
-      {
-        text: t(locale, 'authLogout'),
-        style: 'destructive',
-        onPress: () => {
-          logout().catch(() => {});
-        },
-      },
-    ]);
-  }, [locale, logout]);
 
   const pickLocale = useCallback(
     code => {
@@ -119,183 +77,12 @@ export function ProfileScreen() {
     [colors, locale, pickLocale],
   );
 
-  const initialsSeed = String(profile?.username ?? user?.username ?? displayName ?? '');
-  const avatarToken = sanitizeAvatarForUi(profile?.avatar);
-  const hasMovieAvatar = isMoviePosterAvatarToken(avatarToken);
-  const moviePoster = parseMoviePosterAvatarToken(avatarToken);
-  const letterPair = getAvatarInitials(
-    displayName === '—' ? '' : displayName,
-    locale,
-    initialsSeed,
-  );
-  const initialsStyle = initialsAvatarPalette(initialsSeed + (profile?.email || ''), theme);
-  const likedCount = Array.isArray(profile?.likedMovies)
-    ? profile.likedMovies.map(normalizeServerMovie).filter(Boolean).length
-    : 0;
-  const watchedCount = Array.isArray(profile?.watchedMovies)
-    ? profile.watchedMovies.map(normalizeServerMovie).filter(Boolean).length
-    : 0;
-
   return (
     <SafeAreaView style={[styles.safe, {backgroundColor: colors.background}]} edges={['top']}>
       <ScrollView
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}>
-        {isLoggedIn && user ? (
-          <View style={[styles.mainCard, {borderColor: colors.border, backgroundColor: colors.surface}]}>
-            {loading && !profile ? (
-              <View style={styles.loaderWrap}>
-                <ActivityIndicator color={colors.primary} size="large" />
-                <Text style={[styles.loaderLabel, {color: colors.textMuted}]}>{t(locale, 'loading')}</Text>
-              </View>
-            ) : null}
-
-            {error ? (
-              <View
-                style={[
-                  styles.errorBanner,
-                  {
-                    backgroundColor: darkMode ? 'rgba(255, 99, 71, 0.12)' : 'rgba(200, 60, 50, 0.1)',
-                    borderLeftColor: colors.pass,
-                  },
-                ]}>
-                <Text style={[styles.errorBannerTitle, {color: colors.text}]}>{t(locale, 'profileSyncErrorTitle')}</Text>
-                <Text style={[styles.errorBannerBody, {color: colors.textMuted}]}>{error}</Text>
-                <Text style={[styles.errorBannerHint, {color: colors.textMuted}]}>
-                  {t(locale, 'profileSyncErrorHint')}
-                </Text>
-                <TouchableOpacity
-                  onPress={() => refreshProfile().catch(() => {})}
-                  style={[styles.errorRetry, {backgroundColor: colors.primary}]}>
-                  <Text style={[styles.errorRetryText, {color: colors.onPrimary}]}>{t(locale, 'tryAgain')}</Text>
-                </TouchableOpacity>
-              </View>
-            ) : null}
-
-            <View style={[styles.heroBand, {backgroundColor: heroBandBg}]}>
-              <View
-                style={[
-                  styles.avatarPh,
-                  {
-                    borderColor: initialsStyle.border,
-                    backgroundColor: initialsStyle.bg,
-                  },
-                ]}>
-                {hasMovieAvatar ? (
-                  <View style={styles.avatarPoster}>
-                    <PosterImage
-                      posterPath={moviePoster?.posterPath ?? null}
-                      colors={colors}
-                      size="small"
-                      style={{borderRadius: 999}}
-                    />
-                  </View>
-                ) : (
-                  <Text style={[styles.avatarPhText, {color: initialsStyle.text}]}>{letterPair}</Text>
-                )}
-              </View>
-              <View style={styles.heroTextCol}>
-                <Text style={[styles.displayName, {color: colors.text}]} numberOfLines={1}>
-                  {displayName}
-                </Text>
-                <Text style={[styles.displayEmail, {color: colors.textMuted}]} numberOfLines={1}>
-                  {profile?.email || user.email}
-                </Text>
-              </View>
-            </View>
-
-            {profile?.bio ? (
-              <Text style={[styles.bioBlock, {color: colors.text}]}>{profile.bio}</Text>
-            ) : null}
-
-            {Array.isArray(profile?.favoriteGenres) && profile.favoriteGenres.length ? (
-              <View style={styles.genreScroll}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.genreScrollInner}>
-                  {profile.favoriteGenres.map((g, idx) => (
-                    <View
-                      key={`${String(g)}-${idx}`}
-                      style={[styles.genrePill, {backgroundColor: colors.surfaceElevated, borderColor: colors.primary}]}>
-                      <Text style={[styles.genrePillText, {color: colors.text}]}>{g}</Text>
-                    </View>
-                  ))}
-                </ScrollView>
-              </View>
-            ) : null}
-
-            {headline && headlinePct != null && Number.isFinite(headlinePct) ? (
-              <View style={[styles.tasteCard, {borderColor: colors.primary, backgroundColor: colors.surfaceElevated}]}>
-                <Text style={[styles.tasteLabel, {color: colors.textMuted}]}>{t(locale, 'profileYourTaste')}</Text>
-                <View style={styles.tasteRow}>
-                  <Text style={[styles.tastePercent, {color: colors.primary}]}>{headlinePct}%</Text>
-                  <Text style={[styles.tasteGenre, {color: colors.text}]} numberOfLines={2}>
-                    {headline}
-                  </Text>
-                </View>
-                <Text style={[styles.tasteSub, {color: colors.textMuted}]}>
-                  {t(locale, 'profileInsightLine')
-                    .replace('{percent}', String(headlinePct))
-                    .replace('{genre}', headline)}
-                </Text>
-              </View>
-            ) : null}
-
-            <TouchableOpacity
-              onPress={() => navigation.navigate('ProfileEdit')}
-              activeOpacity={0.9}
-              style={[styles.btnPrimary, {backgroundColor: colors.primary}, styles.btnShadow]}>
-              <Text style={[styles.btnPrimaryText, {color: colors.onPrimary}]}>{t(locale, 'profileEditTitle')}</Text>
-            </TouchableOpacity>
-
-            {profile ? (
-              <View style={styles.listsBlock}>
-                <TouchableOpacity
-                  activeOpacity={0.9}
-                  onPress={() => navigation.navigate('ProfileMovies', {mode: 'liked'})}
-                  style={[styles.listNavBtn, {borderColor: colors.border, backgroundColor: colors.surfaceElevated}]}>
-                  <Text style={[styles.listNavTitle, {color: colors.text}]}>
-                    {t(locale, 'profileLiked')}
-                  </Text>
-                  <Text style={[styles.listNavMeta, {color: colors.textMuted}]}>
-                    {likedCount}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  activeOpacity={0.9}
-                  onPress={() => navigation.navigate('ProfileMovies', {mode: 'watched'})}
-                  style={[styles.listNavBtn, {borderColor: colors.border, backgroundColor: colors.surfaceElevated}]}>
-                  <Text style={[styles.listNavTitle, {color: colors.text}]}>
-                    {t(locale, 'profileWatched')}
-                  </Text>
-                  <Text style={[styles.listNavMeta, {color: colors.textMuted}]}>
-                    {watchedCount}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            ) : null}
-
-            <TouchableOpacity
-              onPress={onLogout}
-              activeOpacity={0.88}
-              style={[styles.btnGhost, {borderColor: colors.border}]}>
-              <Text style={[styles.btnGhostText, {color: colors.text}]}>{t(locale, 'authLogout')}</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <View style={styles.authRow}>
-            <TouchableOpacity
-              onPress={() => navigation.navigate('LoginRegister', {mode: 'login'})}
-              style={[styles.authBtn, {backgroundColor: colors.primary}]}>
-              <Text style={[styles.authBtnText, {color: colors.onPrimary}]}>{t(locale, 'authLoginCta')}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => navigation.navigate('LoginRegister', {mode: 'register'})}
-              style={[styles.authBtnOutline, {borderColor: colors.primary}]}>
-              <Text style={[styles.authBtnOutlineText, {color: colors.primary}]}>{t(locale, 'authRegisterCta')}</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
         <Text style={[styles.prefLabel, {color: colors.text}]}>{t(locale, 'language')}</Text>
 
         <TouchableOpacity

@@ -186,6 +186,126 @@ export const slateLightTheme = withMeta({
   overlay: 'rgba(0,0,0,0.24)',
 }, 'light');
 
+export const crimsonTheme = withMeta({
+  background: '#14060A',
+  surface: '#241016',
+  surfaceElevated: '#351820',
+  text: '#FFECEE',
+  textMuted: '#D7A8B0',
+  primary: '#FF4D6A',
+  primaryDark: '#E03652',
+  onPrimary: '#2A0A10',
+  border: '#5A2430',
+  like: '#46D369',
+  pass: '#FFB4B4',
+  overlay: 'rgba(0,0,0,0.58)',
+}, 'dark');
+
+export const lagoonTheme = withMeta({
+  background: '#041416',
+  surface: '#0C2428',
+  surfaceElevated: '#14383E',
+  text: '#E7FBFC',
+  textMuted: '#9DCFD4',
+  primary: '#2EC4B6',
+  primaryDark: '#1A9E92',
+  onPrimary: '#042220',
+  border: '#1E5558',
+  like: '#46D369',
+  pass: '#FF6B6B',
+  overlay: 'rgba(0,0,0,0.58)',
+}, 'dark');
+
+export const sandLightTheme = withMeta({
+  background: '#FBF6EE',
+  surface: '#FFFFFF',
+  surfaceElevated: '#F3E6D4',
+  text: '#2C2418',
+  textMuted: '#7A6A56',
+  primary: '#C4A574',
+  primaryDark: '#A88855',
+  onPrimary: '#23180C',
+  border: '#E4D3BA',
+  like: '#2E7D32',
+  pass: '#C62828',
+  overlay: 'rgba(0,0,0,0.22)',
+}, 'light');
+
+export const lavenderLightTheme = withMeta({
+  background: '#F7F4FF',
+  surface: '#FFFFFF',
+  surfaceElevated: '#EBE4FF',
+  text: '#241C38',
+  textMuted: '#6E6288',
+  primary: '#8B6CDB',
+  primaryDark: '#6E50C0',
+  onPrimary: '#F8F5FF',
+  border: '#D5CBEE',
+  like: '#2E7D32',
+  pass: '#C62828',
+  overlay: 'rgba(0,0,0,0.22)',
+}, 'light');
+
+export const emberTheme = withMeta({
+  background: '#120C08',
+  surface: '#24160E',
+  surfaceElevated: '#352016',
+  text: '#FFF3E8',
+  textMuted: '#D2B39A',
+  primary: '#FF7A2F',
+  primaryDark: '#E06018',
+  onPrimary: '#2A1206',
+  border: '#5A3420',
+  like: '#46D369',
+  pass: '#FF6B6B',
+  overlay: 'rgba(0,0,0,0.58)',
+}, 'dark');
+
+export const glacierLightTheme = withMeta({
+  background: '#F4FBFF',
+  surface: '#FFFFFF',
+  surfaceElevated: '#E3F4FB',
+  text: '#102833',
+  textMuted: '#5A7582',
+  primary: '#3AA0C8',
+  primaryDark: '#2A7EA0',
+  onPrimary: '#F4FCFF',
+  border: '#C5E0EB',
+  like: '#2E7D32',
+  pass: '#C62828',
+  overlay: 'rgba(0,0,0,0.22)',
+}, 'light');
+
+export const cocoaTheme = withMeta({
+  background: '#120E0C',
+  surface: '#241C16',
+  surfaceElevated: '#342820',
+  text: '#F8F0E8',
+  textMuted: '#CDB8A4',
+  primary: '#D4A276',
+  primaryDark: '#B88458',
+  onPrimary: '#24160C',
+  border: '#4A382C',
+  like: '#46D369',
+  pass: '#FF6B6B',
+  overlay: 'rgba(0,0,0,0.58)',
+}, 'dark');
+
+export const pearlLightTheme = withMeta({
+  background: '#F7F7F8',
+  surface: '#FFFFFF',
+  surfaceElevated: '#EEEEF1',
+  text: '#1C1C22',
+  textMuted: '#6A6A76',
+  primary: '#5C5C6A',
+  primaryDark: '#454552',
+  onPrimary: '#F7F7F8',
+  border: '#D8D8DE',
+  like: '#2E7D32',
+  pass: '#C62828',
+  overlay: 'rgba(0,0,0,0.22)',
+}, 'light');
+
 export const THEME_OPTIONS = [
   {id: 'dark', key: 'themeDark'},
   {id: 'light', key: 'themeLight'},
@@ -199,6 +319,14 @@ export const THEME_OPTIONS = [
   {id: 'mint', key: 'themeMint'},
   {id: 'amber', key: 'themeAmber'},
   {id: 'slate', key: 'themeSlate'},
+  {id: 'crimson', key: 'themeCrimson'},
+  {id: 'lagoon', key: 'themeLagoon'},
+  {id: 'sand', key: 'themeSand'},
+  {id: 'lavender', key: 'themeLavender'},
+  {id: 'ember', key: 'themeEmber'},
+  {id: 'glacier', key: 'themeGlacier'},
+  {id: 'cocoa', key: 'themeCocoa'},
+  {id: 'pearl', key: 'themePearl'},
 ];
 
 const themeMap = {
@@ -214,6 +342,14 @@ const themeMap = {
   mint: mintLightTheme,
   amber: amberLightTheme,
   slate: slateLightTheme,
+  crimson: crimsonTheme,
+  lagoon: lagoonTheme,
+  sand: sandLightTheme,
+  lavender: lavenderLightTheme,
+  ember: emberTheme,
+  glacier: glacierLightTheme,
+  cocoa: cocoaTheme,
+  pearl: pearlLightTheme,
 };
 
 const themeOrder = THEME_OPTIONS.map(x => x.id);

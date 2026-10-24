@@ -177,7 +177,7 @@ function MainTabs() {
           tabBarLabel: ({focused}) => (
             <TabLabel
               focused={focused}
-              label={t(locale, 'favorites')}
+              label={t(locale, 'library')}
               colors={colors}
             />
           ),

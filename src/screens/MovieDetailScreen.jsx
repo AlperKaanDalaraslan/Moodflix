@@ -16,6 +16,7 @@ import {PosterImage} from '../components/PosterImage';
 import {WhereToWatch} from '../components/WhereToWatch';
 import {TrailerModal} from '../components/TrailerModal';
 import {useFavorites} from '../context/FavoritesContext';
+import {useWatched} from '../context/WatchedContext';
 import {useSettings} from '../context/SettingsContext';
 import {t} from '../i18n/translations';
 import {getTheme} from '../theme/colors';
@@ -28,6 +29,7 @@ export function MovieDetailScreen() {
   const {locale, theme} = useSettings();
   const colors = getTheme(theme);
   const {toggleFavorite, isFavorite} = useFavorites();
+  const {toggleWatched, isWatched} = useWatched();
 
   const [movie, setMovie] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -69,6 +71,7 @@ export function MovieDetailScreen() {
   }, [load]);
 
   const fav = movie ? isFavorite(movie) : false;
+  const seen = movie ? isWatched(movie) : false;
 
   const onToggleFavorite = useCallback(() => {
     if (!movie) {
@@ -77,21 +80,37 @@ export function MovieDetailScreen() {
     toggleFavorite(movie);
   }, [movie, toggleFavorite]);
 
+  const onToggleWatched = useCallback(() => {
+    if (!movie) {
+      return;
+    }
+    toggleWatched(movie);
+  }, [movie, toggleWatched]);
+
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: movie
         ? () => (
-            <TouchableOpacity
-              onPress={onToggleFavorite}
-              style={{paddingHorizontal: 12, paddingVertical: 8}}>
-              <Text style={{color: fav ? colors.primary : colors.text, fontSize: 18}}>
-                {fav ? '♥' : '♡'}
-              </Text>
-            </TouchableOpacity>
+            <View style={{flexDirection: 'row', alignItems: 'center'}}>
+              <TouchableOpacity
+                onPress={onToggleWatched}
+                style={{paddingHorizontal: 10, paddingVertical: 8}}>
+                <Text style={{color: seen ? colors.primary : colors.text, fontSize: 18, fontWeight: '800'}}>
+                  {seen ? '✓' : '✓'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={onToggleFavorite}
+                style={{paddingHorizontal: 12, paddingVertical: 8}}>
+                <Text style={{color: fav ? colors.primary : colors.text, fontSize: 18}}>
+                  {fav ? '♥' : '♡'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           )
         : undefined,
     });
-  }, [colors.primary, colors.text, fav, movie, navigation, onToggleFavorite]);
+  }, [colors.primary, colors.text, fav, movie, navigation, onToggleFavorite, onToggleWatched, seen]);
 
   const trailerKey = movie?.videos?.results?.find(
     v => v.site === 'YouTube' && (v.type === 'Trailer' || v.type === 'Teaser'),
@@ -178,6 +197,37 @@ export function MovieDetailScreen() {
               : ''}
           </Text>
 
+          <View style={styles.markRow}>
+            <TouchableOpacity
+              onPress={onToggleWatched}
+              style={[
+                styles.markChip,
+                {
+                  borderColor: seen ? colors.primary : colors.border,
+                  backgroundColor: seen ? colors.primary : colors.surfaceElevated,
+                },
+              ]}
+            >
+              <Text style={{color: seen ? colors.onPrimary : colors.text, fontWeight: '800'}}>
+                {seen ? t(locale, 'watchedMarked') : t(locale, 'markWatched')}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={onToggleFavorite}
+              style={[
+                styles.markChip,
+                {
+                  borderColor: fav ? colors.primary : colors.border,
+                  backgroundColor: fav ? colors.primary : colors.surfaceElevated,
+                },
+              ]}
+            >
+              <Text style={{color: fav ? colors.onPrimary : colors.text, fontWeight: '800'}}>
+                {fav ? t(locale, 'favoriteMarked') : t(locale, 'addFavorite')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           <WhereToWatch movie={movie} locale={locale} colors={colors} />
 
           <View style={styles.tags}>
@@ -263,6 +313,13 @@ const styles = StyleSheet.create({
   center: {flex: 1, alignItems: 'center', justifyContent: 'center'},
   heroMedia: {aspectRatio: 16 / 9, borderRadius: 14, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth},
   title: {fontSize: 28, fontWeight: '900', marginTop: 16, letterSpacing: -0.3},
+  markRow: {flexDirection: 'row', gap: 10, marginTop: 14},
+  markChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
   metaLine: {marginTop: 8, fontSize: 15, fontWeight: '600'},
   overviewBody: {lineHeight: 22, fontSize: 15},
   tags: {flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12},

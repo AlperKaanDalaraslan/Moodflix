@@ -4,9 +4,12 @@ import RNShake from 'react-native-shake';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
 import {AuthProvider, useAuth} from './src/context/AuthContext';
 import {FavoritesProvider} from './src/context/FavoritesContext';
+import {WatchedProvider} from './src/context/WatchedContext';
 import {ProfileProvider} from './src/context/ProfileContext';
 import {SettingsProvider, useSettings} from './src/context/SettingsContext';
 import {RootNavigator} from './src/navigation/RootNavigator';
+import {IntroScreen} from './src/screens/IntroScreen';
+import {ReminderController} from './src/notifications/ReminderController';
 import {getTheme, isDarkMode, nextThemeId} from './src/theme/colors';
 
 function ThemedStatusBar() {
@@ -44,11 +47,13 @@ function ThemeShakeController() {
 }
 
 function AppInner() {
+  const {ready, introSeen} = useSettings();
   return (
     <>
       <ThemedStatusBar />
       <ThemeShakeController />
-      <RootNavigator />
+      <ReminderController />
+      {ready && !introSeen ? <IntroScreen /> : <RootNavigator />}
     </>
   );
 }
@@ -58,7 +63,7 @@ function FavoritesAuthBridge({children}) {
   const {hydrated, isLoggedIn} = useAuth();
   return (
     <FavoritesProvider authHydrated={hydrated} authIsLoggedIn={isLoggedIn}>
-      {children}
+      <WatchedProvider>{children}</WatchedProvider>
     </FavoritesProvider>
   );
 }

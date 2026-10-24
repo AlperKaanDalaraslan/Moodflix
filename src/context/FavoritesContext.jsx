@@ -69,6 +69,7 @@ function toggleInMemory(movie) {
 }
 
 let loadStarted = false;
+let storageReady = false;
 function loadFromStorage() {
   if (loadStarted) {
     return;
@@ -77,31 +78,30 @@ function loadFromStorage() {
   (async () => {
     try {
       const raw = await AsyncStorage.getItem(STORAGE_KEY);
-      if (!raw) {
-        emit();
-        return;
-      }
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) {
-        return;
-      }
-      const map = new Map();
-      parsed.forEach(m => {
-        const compact = compactMovie(m);
-        const key = catalogKey(compact);
-        if (key && compact) {
-          map.set(key, compact);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          const map = new Map();
+          parsed.forEach(m => {
+            const compact = compactMovie(m);
+            const key = catalogKey(compact);
+            if (key && compact) {
+              map.set(key, compact);
+            }
+          });
+          memory.forEach(m => {
+            const key = catalogKey(m);
+            if (key) {
+              map.set(key, m);
+            }
+          });
+          memory = Array.from(map.values());
         }
-      });
-      memory.forEach(m => {
-        const key = catalogKey(m);
-        if (key) {
-          map.set(key, m);
-        }
-      });
-      memory = Array.from(map.values());
-      emit();
+      }
     } catch {
+      /* kayıt okunamadı */
+    } finally {
+      storageReady = true;
       emit();
     }
   })();
@@ -113,10 +113,12 @@ function loadFromStorage() {
  */
 export function FavoritesProvider({children}) {
   const [favorites, setFavorites] = useState(memory);
+  const [ready, setReady] = useState(storageReady);
 
   useEffect(() => {
     const onChange = next => {
       setFavorites(next);
+      setReady(storageReady);
     };
     listeners.add(onChange);
     loadFromStorage();
@@ -148,12 +150,13 @@ export function FavoritesProvider({children}) {
   const value = useMemo(
     () => ({
       favorites,
+      ready,
       ids,
       toggleFavorite,
       addFavorite,
       isFavorite,
     }),
-    [favorites, ids, toggleFavorite, addFavorite, isFavorite],
+    [favorites, ready, ids, toggleFavorite, addFavorite, isFavorite],
   );
 
   return (

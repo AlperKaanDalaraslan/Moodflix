@@ -647,6 +647,18 @@ export async function fetchPersonDetail(language, id) {
   };
 }
 
+export async function fetchTitleRecommendations(language, id, mediaType = 'movie') {
+  const path =
+    mediaType === 'tv' ? `/tv/${id}/recommendations` : `/movie/${id}/recommendations`;
+  const json = await getJson(buildUrl(path, language, {page: 1}));
+  return {
+    ...json,
+    results: (json.results || [])
+      .map(row => asCatalogItem(row, mediaType === 'tv' ? 'tv' : 'movie'))
+      .filter(Boolean),
+  };
+}
+
 export async function fetchTitleDetail(language, id, mediaType = 'movie') {
   if (mediaType === 'tv') {
     const raw = await fetchTvDetail(language, id);

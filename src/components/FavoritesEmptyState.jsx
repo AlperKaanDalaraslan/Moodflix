@@ -16,7 +16,8 @@ const winH = Dimensions.get('window').height;
 
 const POSTER_COUNT = 5;
 
-export function FavoritesEmptyState({colors, locale, navigation}) {
+export function FavoritesEmptyState({colors, locale, navigation, mode = 'favorites'}) {
+  const watchedMode = mode === 'watched';
   const heartScale = useRef(new Animated.Value(1)).current;
   const heartFloat = useRef(new Animated.Value(0)).current;
   const stripShift = useRef(new Animated.Value(0)).current;
@@ -296,16 +297,16 @@ export function FavoritesEmptyState({colors, locale, navigation}) {
                   textShadowRadius: 18,
                 },
               ]}>
-              ♥
+              {watchedMode ? '✓' : '♥'}
             </Text>
           </Animated.View>
         </View>
 
         <Text style={[styles.title, {color: colors.text}]}>
-          {t(locale, 'favoritesEmptyTitle')}
+          {t(locale, watchedMode ? 'watchedEmptyTitle' : 'favoritesEmptyTitle')}
         </Text>
         <Text style={[styles.body, {color: colors.textMuted}]}>
-          {t(locale, 'favoritesEmpty')}
+          {t(locale, watchedMode ? 'watchedEmpty' : 'favoritesEmpty')}
         </Text>
 
         <View style={[styles.ctaRow, {backgroundColor: colors.primary}, shadow.hero]}>

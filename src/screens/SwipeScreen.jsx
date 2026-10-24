@@ -30,6 +30,7 @@ import {
   fetchPopular,
   fetchTopRated,
   fetchUpcoming,
+  fetchTitleRecommendations,
   hasApiKey,
   pickBestYoutubeVideoKey,
 } from '../api/tmdbClient';
@@ -38,6 +39,7 @@ import { WatchPriceLine } from '../components/WhereToWatch';
 import { TrailerModal } from '../components/TrailerModal';
 import { YoutubeEmbed } from '../components/YoutubeEmbed';
 import { useFavorites } from '../context/FavoritesContext';
+import { useWatched } from '../context/WatchedContext';
 import { useSettings } from '../context/SettingsContext';
 import { t } from '../i18n/translations';
 import { getTheme } from '../theme/colors';
@@ -99,6 +101,99 @@ async function fetchSwipeFeedPage(locale) {
     return fetchNowPlaying(locale, page);
   }
   return fetchUpcoming(locale, page);
+}
+
+async function pickPlayable(locale, rows, seen, limit) {
+  if (limit <= 0) {
+    return [];
+  }
+  const candidates = [];
+  for (const movie of rows || []) {
+    const key = catalogKey(movie);
+    if (!key || seen.has(key) || !movie?.poster_path || movie.id == null) {
+      continue;
+    }
+    candidates.push(movie);
+    if (candidates.length >= Math.max(limit * 4, 8)) {
+      break;
+    }
+  }
+  const playable = await keepTitlesWithVideo(locale, candidates);
+  const picked = [];
+  for (const movie of playable) {
+    const key = catalogKey(movie);
+    if (!key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    picked.push(movie);
+    if (picked.length >= limit) {
+      break;
+    }
+  }
+  return picked;
+}
+
+async function pickFromSeeds(locale, seeds, seen, limit) {
+  const picked = [];
+  for (const seed of shuffleArray(seeds).slice(0, 4)) {
+    if (picked.length >= limit) {
+      break;
+    }
+    const res = await fetchTitleRecommendations(
+      locale,
+      seed.id,
+      seed.media_type === 'tv' ? 'tv' : 'movie',
+    ).catch(() => ({results: []}));
+    const more = await pickPlayable(locale, res.results, seen, limit - picked.length);
+    picked.push(...more);
+  }
+  return picked;
+}
+
+async function pickRandom(locale, seen, limit) {
+  const picked = [];
+  for (let attempt = 0; attempt < 5 && picked.length < limit; attempt += 1) {
+    let res = await fetchSwipeFeedPage(locale);
+    let batch = res.results ?? [];
+    if (!batch.length) {
+      res = await fetchPopular(locale, 1 + Math.floor(Math.random() * 10));
+      batch = res.results ?? [];
+    }
+    const more = await pickPlayable(locale, batch, seen, limit - picked.length);
+    picked.push(...more);
+  }
+  return picked;
+}
+
+function swipeMixCounts(hasFav, hasWatched) {
+  if (hasFav && hasWatched) {
+    return {fav: 2, watched: 2, random: 1};
+  }
+  if (hasFav || hasWatched) {
+    return {fav: hasFav ? 2 : 0, watched: hasWatched ? 2 : 0, random: 3};
+  }
+  return {fav: 0, watched: 0, random: 5};
+}
+
+async function composeSwipeBatch(locale, favorites, watched, blocked) {
+  const seen = new Set(blocked || []);
+  for (const item of [...(favorites || []), ...(watched || [])]) {
+    const key = catalogKey(item);
+    if (key) {
+      seen.add(key);
+    }
+  }
+  const counts = swipeMixCounts(favorites.length > 0, watched.length > 0);
+  const fromFav = counts.fav
+    ? await pickFromSeeds(locale, favorites, seen, counts.fav)
+    : [];
+  const fromWatched = counts.watched
+    ? await pickFromSeeds(locale, watched, seen, counts.watched)
+    : [];
+  const short = 5 - fromFav.length - fromWatched.length;
+  const randoms = await pickRandom(locale, seen, short);
+  return shuffleArray([...fromFav, ...fromWatched, ...randoms]);
 }
 
 /**
@@ -507,7 +602,8 @@ export function SwipeScreen() {
   const colors = getTheme(theme);
   const insets = useSafeAreaInsets();
   const { width: winW, height: winH } = useWindowDimensions();
-  const { addFavorite } = useFavorites();
+  const { addFavorite, toggleFavorite, isFavorite, favorites, ready: favoritesReady } = useFavorites();
+  const { toggleWatched, isWatched, watched, ready: watchedReady } = useWatched();
   /** Tab sahnesi gerçek yüksekliği (`useWindowDimensions` tab bar hariç değil) */
   const [tabBodyH, setTabBodyH] = useState(null);
   const [addedBanner, setAddedBanner] = useState('');
@@ -528,6 +624,13 @@ export function SwipeScreen() {
   const isSwipeTabFocused = useIsFocused();
   /** `true` ile başla: ilk açılışta “yeniden odak” sanılmasın (tab bileşeni unmount olmaz). */
   const prevSwipeTabFocusedRef = useRef(true);
+
+  const favoritesRef = useRef(favorites);
+  const watchedRef = useRef(watched);
+  const deckRef = useRef([]);
+  favoritesRef.current = favorites;
+  watchedRef.current = watched;
+  deckRef.current = deck;
 
   const top = deck[0];
 
@@ -573,31 +676,23 @@ export function SwipeScreen() {
         }
         return;
       }
+      if (!favoritesReady || !watchedReady) {
+        return;
+      }
       if (!opts?.silent) {
         setLoading(true);
       }
       setError(null);
       try {
-        const collected = [];
-        const seen = new Set();
-        for (let attempt = 0; attempt < 5 && collected.length < 8; attempt += 1) {
-          let res = await fetchSwipeFeedPage(locale);
-          let batch = (res.results ?? []).filter(m => m?.poster_path && m.id != null);
-          if (!batch.length) {
-            res = await fetchPopular(locale, 1 + Math.floor(Math.random() * 10));
-            batch = (res.results ?? []).filter(m => m?.poster_path && m.id != null);
-          }
-          const playable = await keepTitlesWithVideo(locale, batch);
-          for (const movie of playable) {
-            const key = catalogKey(movie) || String(movie.id);
-            if (seen.has(key)) {
-              continue;
-            }
-            seen.add(key);
-            collected.push(movie);
-          }
-        }
-        const next = shuffleArray(collected);
+        const blocked = opts?.replace
+          ? []
+          : deckRef.current.map(movie => catalogKey(movie)).filter(Boolean);
+        const next = await composeSwipeBatch(
+          locale,
+          favoritesRef.current,
+          watchedRef.current,
+          blocked,
+        );
         if (opts?.replace) {
           setDeck(next);
         } else {
@@ -614,7 +709,7 @@ export function SwipeScreen() {
         }
       }
     },
-    [locale],
+    [locale, favoritesReady, watchedReady],
   );
 
   useFocusEffect(
@@ -726,22 +821,36 @@ export function SwipeScreen() {
       if (!m) {
         return;
       }
-      if (dir === 'like') {
-        const ok = addFavorite({
-          id: m.id,
-          title: m.title || m.name,
-          poster_path: m.poster_path ?? m.backdrop_path ?? null,
-          media_type: m.media_type === 'tv' ? 'tv' : 'movie',
-        });
-        if (ok) {
-          setAddedBanner(t(locale, 'swipeAddedFavorite'));
-          if (addedBannerTimer.current) {
-            clearTimeout(addedBannerTimer.current);
-          }
-          addedBannerTimer.current = setTimeout(() => {
-            setAddedBanner('');
-          }, 1400);
+      const payload = {
+        id: m.id,
+        title: m.title || m.name,
+        poster_path: m.poster_path ?? m.backdrop_path ?? null,
+        media_type: m.media_type === 'tv' ? 'tv' : 'movie',
+      };
+      const showBanner = message => {
+        setAddedBanner(message);
+        if (addedBannerTimer.current) {
+          clearTimeout(addedBannerTimer.current);
         }
+        addedBannerTimer.current = setTimeout(() => {
+          setAddedBanner('');
+        }, 1400);
+      };
+      if (dir === 'mark-like') {
+        const was = isFavorite(payload);
+        toggleFavorite(payload);
+        showBanner(t(locale, was ? 'removeFavorite' : 'swipeAddedFavorite'));
+        return;
+      }
+      if (dir === 'mark-watched') {
+        const was = isWatched(payload);
+        toggleWatched(payload);
+        showBanner(t(locale, was ? 'removeWatched' : 'swipeAddedWatched'));
+        return;
+      }
+      if (dir === 'like') {
+        addFavorite(payload);
+        showBanner(t(locale, 'swipeAddedFavorite'));
       }
       setDeck(d => {
         const head = d[0];
@@ -751,7 +860,7 @@ export function SwipeScreen() {
         return d.slice(1);
       });
     },
-    [addFavorite, locale, top],
+    [addFavorite, isFavorite, isWatched, locale, toggleFavorite, toggleWatched, top],
   );
 
   useEffect(() => {
@@ -917,18 +1026,38 @@ export function SwipeScreen() {
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => onSwipe('like', top)}
+                onPress={() => onSwipe('mark-watched', top)}
                 style={[
                   styles.circle,
                   {
-                    borderColor: colors.primary,
+                    borderColor: top && isWatched(top) ? colors.primary : colors.border,
                     backgroundColor: colors.surfaceElevated,
                   },
                 ]}
               >
                 <Text
                   style={{
-                    color: colors.primary,
+                    color: top && isWatched(top) ? colors.primary : colors.text,
+                    fontSize: 26,
+                    fontWeight: '900',
+                  }}
+                >
+                  ✓
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => onSwipe('mark-like', top)}
+                style={[
+                  styles.circle,
+                  {
+                    borderColor: top && isFavorite(top) ? colors.primary : colors.border,
+                    backgroundColor: colors.surfaceElevated,
+                  },
+                ]}
+              >
+                <Text
+                  style={{
+                    color: top && isFavorite(top) ? colors.primary : colors.text,
                     fontSize: 26,
                     fontWeight: '900',
                   }}

@@ -1,6 +1,8 @@
 import {useNavigation} from '@react-navigation/native';
-import React, {useCallback, useLayoutEffect, useMemo, useState} from 'react';
+import React, {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
 import {
+  Animated,
+  Easing,
   FlatList,
   Modal,
   Pressable,
@@ -16,15 +18,125 @@ import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useSettings} from '../context/SettingsContext';
 import {TMDB_CONTENT_LOCALES} from '../i18n/contentLocales';
 import {t} from '../i18n/translations';
-import {getTheme} from '../theme/colors';
+import {getTheme, THEME_OPTIONS} from '../theme/colors';
 
 const PAD = 18;
+
+function ShakingThemePhone({locale}) {
+  const tilt = useRef(new Animated.Value(0)).current;
+  const fade = useRef(new Animated.Value(1)).current;
+  const [index, setIndex] = useState(0);
+  const option = THEME_OPTIONS[index] ?? THEME_OPTIONS[0];
+  const preview = getTheme(option.id);
+
+  useEffect(() => {
+    let alive = true;
+
+    const shakeOnce = () =>
+      new Promise(resolve => {
+        Animated.sequence([
+          Animated.timing(tilt, {
+            toValue: 1,
+            duration: 120,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+          Animated.timing(tilt, {
+            toValue: -1,
+            duration: 140,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+          Animated.timing(tilt, {
+            toValue: 0,
+            duration: 160,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+        ]).start(({finished}) => resolve(finished));
+      });
+
+    const changeTheme = () =>
+      new Promise(resolve => {
+        Animated.timing(fade, {
+          toValue: 0,
+          duration: 160,
+          useNativeDriver: true,
+        }).start(({finished}) => {
+          if (!alive || !finished) {
+            resolve(false);
+            return;
+          }
+          setIndex(current => (current + 1) % THEME_OPTIONS.length);
+          Animated.timing(fade, {
+            toValue: 1,
+            duration: 240,
+            useNativeDriver: true,
+          }).start(() => resolve(true));
+        });
+      });
+
+    const wait = ms => new Promise(resolve => {
+      setTimeout(resolve, ms);
+    });
+
+    (async () => {
+      while (alive) {
+        const shook = await shakeOnce();
+        if (!alive || !shook) {
+          break;
+        }
+        await changeTheme();
+        if (!alive) {
+          break;
+        }
+        await wait(1100);
+      }
+    })();
+
+    return () => {
+      alive = false;
+      tilt.stopAnimation();
+      fade.stopAnimation();
+    };
+  }, [fade, tilt]);
+
+  const rotate = tilt.interpolate({
+    inputRange: [-1, 1],
+    outputRange: ['-12deg', '12deg'],
+  });
+  const shift = tilt.interpolate({
+    inputRange: [-1, 1],
+    outputRange: [-8, 8],
+  });
+
+  return (
+    <View style={styles.stage}>
+      <Animated.View style={{transform: [{translateX: shift}, {rotate}]}}>
+        <View style={styles.phone}>
+          <View style={styles.notch} />
+          <Animated.View style={[styles.phoneScreen, {backgroundColor: preview.background, opacity: fade}]}>
+            <View style={[styles.previewHero, {backgroundColor: preview.primary}]} />
+            <View style={styles.previewRow}>
+              <View style={[styles.previewPoster, {backgroundColor: preview.surfaceElevated}]} />
+              <View style={[styles.previewPoster, {backgroundColor: preview.surface}]} />
+              <View style={[styles.previewPoster, {backgroundColor: preview.surfaceElevated}]} />
+            </View>
+            <View style={[styles.previewLine, {backgroundColor: preview.text, width: '72%'}]} />
+            <View style={[styles.previewLine, {backgroundColor: preview.textMuted, width: '46%'}]} />
+          </Animated.View>
+        </View>
+      </Animated.View>
+      <Text style={[styles.previewName, {color: preview.primary}]}>{t(locale, option.key)}</Text>
+    </View>
+  );
+}
 
 export function ProfileScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const {height: winH} = useWindowDimensions();
-  const {locale, theme, setLocale, shakeThemeEnabled, setShakeThemeEnabled} = useSettings();
+  const {locale, theme, setLocale, shakeThemeEnabled, setShakeThemeEnabled, remindersEnabled, setRemindersEnabled} = useSettings();
   const colors = getTheme(theme);
   const [langOpen, setLangOpen] = useState(false);
   const sheetHeight = Math.round(winH * 0.86);
@@ -128,6 +240,23 @@ export function ProfileScreen() {
             trackColor={{false: colors.border, true: colors.primaryDark}}
           />
         </View>
+        <ShakingThemePhone locale={locale} />
+        <View style={[styles.toggleRow, {borderColor: colors.border, backgroundColor: colors.surface}]}>
+          <View style={styles.toggleTextCol}>
+            <Text style={[styles.toggleTitle, {color: colors.text}]}>
+              {t(locale, 'remindersToggle')}
+            </Text>
+            <Text style={[styles.toggleSub, {color: colors.textMuted}]}>
+              {t(locale, 'remindersHint')}
+            </Text>
+          </View>
+          <Switch
+            value={remindersEnabled}
+            onValueChange={setRemindersEnabled}
+            thumbColor={remindersEnabled ? colors.primary : undefined}
+            trackColor={{false: colors.border, true: colors.primaryDark}}
+          />
+        </View>
       </ScrollView>
 
       <Modal
@@ -177,9 +306,70 @@ export function ProfileScreen() {
 const styles = StyleSheet.create({
   safe: {flex: 1},
   scrollContent: {
+    flexGrow: 1,
     paddingHorizontal: PAD,
     paddingTop: 8,
-    paddingBottom: 36,
+    paddingBottom: 28,
+  },
+  stage: {
+    flexGrow: 1,
+    minHeight: 360,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 28,
+  },
+  phone: {
+    width: 168,
+    height: 320,
+    borderRadius: 32,
+    padding: 10,
+    backgroundColor: '#1A1A1A',
+    borderWidth: 2,
+    borderColor: '#3A3A3A',
+  },
+  notch: {
+    position: 'absolute',
+    top: 16,
+    alignSelf: 'center',
+    width: 64,
+    height: 14,
+    borderRadius: 8,
+    backgroundColor: '#0A0A0A',
+    zIndex: 2,
+  },
+  phoneScreen: {
+    flex: 1,
+    borderRadius: 22,
+    overflow: 'hidden',
+    paddingTop: 28,
+    paddingHorizontal: 12,
+  },
+  previewHero: {
+    height: 36,
+    borderRadius: 10,
+    marginBottom: 14,
+  },
+  previewRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+  },
+  previewPoster: {
+    flex: 1,
+    height: 92,
+    borderRadius: 8,
+  },
+  previewLine: {
+    height: 8,
+    borderRadius: 4,
+    marginBottom: 8,
+    opacity: 0.85,
+  },
+  previewName: {
+    marginTop: 16,
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: -0.2,
   },
   sectionEyebrow: {
     fontSize: 12,

@@ -17,6 +17,7 @@ import {MediaKindBadge} from '../components/MediaKindBadge';
 import {PosterImage} from '../components/PosterImage';
 import {catalogKey, mediaTypeOf} from '../utils/catalog';
 import {useFavorites} from '../context/FavoritesContext';
+import {useWatched} from '../context/WatchedContext';
 import {useSettings} from '../context/SettingsContext';
 import {t} from '../i18n/translations';
 import {getTheme} from '../theme/colors';
@@ -31,10 +32,18 @@ const FavoriteCell = memo(function FavoriteCell({
   colors,
   locale,
   cellW,
+  savedFav,
+  savedWatched,
   onOpen,
-  onRemove,
+  onToggleFav,
+  onToggleWatched,
 }) {
   const canOpen = Number.isFinite(Number(item.id)) || Number.isFinite(Number(item._tmdbId));
+  const markStyle = active => ({
+    borderColor: active ? colors.primary : colors.border,
+    borderWidth: 1.5,
+    backgroundColor: 'rgba(14,14,14,0.94)',
+  });
   return (
     <View style={[styles.cell, {width: cellW}]}>
       <View style={[shadow.poster, styles.posterShell, {backgroundColor: '#000'}]}>
@@ -46,34 +55,36 @@ const FavoriteCell = memo(function FavoriteCell({
           <PosterImage posterPath={posterPath} colors={colors} size="medium" />
           <MediaKindBadge item={item} locale={locale} />
         </TouchableOpacity>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t(locale, 'removeFavorite')}
-          hitSlop={10}
-          onPress={() => onRemove(item)}
-          style={({pressed}) => [
-            styles.favoriteFab,
-            {
-              borderColor: colors.primary,
-              borderWidth: pressed ? 2 : 1.5,
-              backgroundColor: pressed
-                ? 'rgba(32,28,18,0.96)'
-                : 'rgba(14,14,14,0.94)',
-            },
-          ]}>
-          <Text
-            style={[
-              styles.favoriteFabHeart,
-              {
-                color: colors.primary,
-                textShadowColor: 'rgba(0,0,0,0.85)',
-                textShadowOffset: {width: 0, height: 1},
-                textShadowRadius: 4,
-              },
+        <View style={styles.markStack}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t(locale, savedWatched ? 'removeWatched' : 'markWatched')}
+            hitSlop={8}
+            onPress={() => onToggleWatched(item)}
+            style={({pressed}) => [
+              styles.favoriteFab,
+              markStyle(savedWatched),
+              pressed ? {borderWidth: 2} : null,
             ]}>
-            ♥
-          </Text>
-        </Pressable>
+            <Text style={[styles.favoriteFabHeart, {color: savedWatched ? colors.primary : colors.textMuted}]}>
+              ✓
+            </Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t(locale, savedFav ? 'removeFavorite' : 'addFavorite')}
+            hitSlop={8}
+            onPress={() => onToggleFav(item)}
+            style={({pressed}) => [
+              styles.favoriteFab,
+              markStyle(savedFav),
+              pressed ? {borderWidth: 2} : null,
+            ]}>
+            <Text style={[styles.favoriteFabHeart, {color: savedFav ? colors.primary : colors.textMuted}]}>
+              {savedFav ? '♥' : '♡'}
+            </Text>
+          </Pressable>
+        </View>
       </View>
       <Text numberOfLines={2} style={[styles.title, {color: colors.text}]}>
         {item.title || `#${item.id}`}
@@ -85,7 +96,9 @@ const FavoriteCell = memo(function FavoriteCell({
 export function FavoritesScreen() {
   const {locale, theme} = useSettings();
   const colors = getTheme(theme);
-  const {favorites, toggleFavorite} = useFavorites();
+  const {favorites, toggleFavorite, isFavorite} = useFavorites();
+  const {watched, toggleWatched, isWatched} = useWatched();
+  const [listMode, setListMode] = useState('favorites');
   const navigation = useNavigation();
   const {width: winW} = useWindowDimensions();
   const [posterById, setPosterById] = useState({});
@@ -102,10 +115,11 @@ export function FavoritesScreen() {
     }, []),
   );
 
+  const source = listMode === 'watched' ? watched : favorites;
   const safeFavorites = useMemo(() => {
     void focusTick;
-    return Array.isArray(favorites) ? favorites : [];
-  }, [favorites, focusTick]);
+    return Array.isArray(source) ? source : [];
+  }, [source, focusTick]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLocaleLowerCase('tr-TR');
@@ -188,12 +202,13 @@ export function FavoritesScreen() {
     itemVisiblePercentThreshold: 20,
   }).current;
 
-  const onRemoveFavorite = useCallback(
-    item => {
-      toggleFavorite(item);
-    },
-    [toggleFavorite],
-  );
+  const onToggleFav = useCallback(item => {
+    toggleFavorite(item);
+  }, [toggleFavorite]);
+
+  const onToggleWatchedItem = useCallback(item => {
+    toggleWatched(item);
+  }, [toggleWatched]);
 
   const onOpen = useCallback(
     item => {
@@ -221,12 +236,15 @@ export function FavoritesScreen() {
           colors={colors}
           locale={locale}
           cellW={cellW}
+          savedFav={isFavorite(item)}
+          savedWatched={isWatched(item)}
           onOpen={onOpen}
-          onRemove={onRemoveFavorite}
+          onToggleFav={onToggleFav}
+          onToggleWatched={onToggleWatchedItem}
         />
       );
     },
-    [cellW, colors, locale, onOpen, onRemoveFavorite, posterById, tmdbIdByKey],
+    [cellW, colors, isFavorite, isWatched, locale, onOpen, onToggleFav, onToggleWatchedItem, posterById, tmdbIdByKey],
   );
 
   return (
@@ -234,7 +252,7 @@ export function FavoritesScreen() {
       <View style={styles.header}>
         <View style={styles.headerRow}>
           <Text style={[styles.headTitle, {color: colors.text}]}>
-            {t(locale, 'favorites')}
+            {t(locale, listMode === 'watched' ? 'watched' : 'favorites')}
           </Text>
           {safeFavorites.length ? (
             <Text style={[styles.headCount, {color: colors.textMuted}]}>
@@ -242,29 +260,63 @@ export function FavoritesScreen() {
             </Text>
           ) : null}
         </View>
-        {safeFavorites.length > 8 ? (
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder={t(locale, 'favoritesSearch')}
-            placeholderTextColor={colors.textMuted}
-            autoCorrect={false}
-            autoCapitalize="none"
-            style={[
-              styles.search,
-              {
-                color: colors.text,
-                borderColor: `${colors.primary}33`,
-                backgroundColor: colors.surface,
-              },
-            ]}
-          />
-        ) : null}
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          placeholder={t(locale, listMode === 'watched' ? 'watchedSearch' : 'favoritesSearch')}
+          placeholderTextColor={colors.textMuted}
+          autoCorrect={false}
+          autoCapitalize="none"
+          style={[
+            styles.search,
+            {
+              color: colors.text,
+              borderColor: `${colors.primary}33`,
+              backgroundColor: colors.surface,
+            },
+          ]}
+        />
+        <View style={[styles.switchRow, {backgroundColor: colors.surface, borderColor: colors.border}]}>
+          {[
+            {id: 'favorites', label: t(locale, 'favorites')},
+            {id: 'watched', label: t(locale, 'watched')},
+          ].map(option => {
+            const active = listMode === option.id;
+            return (
+              <Pressable
+                key={option.id}
+                onPress={() => {
+                  setListMode(option.id);
+                  setQuery('');
+                }}
+                style={[
+                  styles.switchItem,
+                  active ? {backgroundColor: colors.primary} : null,
+                ]}
+              >
+                <Text
+                  style={{
+                    color: active ? colors.onPrimary : colors.text,
+                    fontWeight: '800',
+                    fontSize: 13,
+                  }}
+                >
+                  {option.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
       </View>
 
       {safeFavorites.length === 0 ? (
         <View style={styles.emptyWrap}>
-          <FavoritesEmptyState colors={colors} locale={locale} navigation={navigation} />
+          <FavoritesEmptyState
+            colors={colors}
+            locale={locale}
+            navigation={navigation}
+            mode={listMode}
+          />
         </View>
       ) : (
         <FlatList
@@ -305,6 +357,20 @@ const styles = StyleSheet.create({
   },
   headTitle: {fontSize: 22, fontWeight: '800', letterSpacing: 0.2},
   headCount: {fontSize: 13, fontWeight: '500', letterSpacing: 0.4},
+  switchRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 4,
+    gap: 4,
+  },
+  switchItem: {
+    flex: 1,
+    borderRadius: 999,
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
   search: {
     marginTop: 12,
     borderRadius: 14,
@@ -330,19 +396,17 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   favoriteFab: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  markStack: {
     position: 'absolute',
     top: 8,
     right: 8,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.5,
-    shadowRadius: 5,
-    elevation: 8,
+    gap: 6,
   },
   favoriteFabHeart: {
     fontSize: 20,

@@ -4,17 +4,22 @@ import {DEFAULT_CONTENT_LOCALE, isTmdbContentLocale} from '../i18n/contentLocale
 import {isThemeId} from '../theme/colors';
 
 const STORAGE_KEY = '@moodflix/settings';
+const INTRO_VERSION = 5;
 
 const defaultSettings = {
   locale: DEFAULT_CONTENT_LOCALE,
   theme: 'dark',
-  shakeThemeEnabled: false,
+  shakeThemeEnabled: true,
+  remindersEnabled: true,
+  introSeen: false,
+  introVersion: 0,
 };
 
 const SettingsContext = createContext(null);
 
 export function SettingsProvider({children}) {
   const [settings, setSettings] = useState(defaultSettings);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -26,16 +31,30 @@ export function SettingsProvider({children}) {
         }
         if (raw) {
           const parsed = JSON.parse(raw);
-          setSettings({
+          const introSeen = parsed.introVersion === INTRO_VERSION;
+          const next = {
             locale: isTmdbContentLocale(parsed.locale)
               ? parsed.locale
               : DEFAULT_CONTENT_LOCALE,
             theme: isThemeId(parsed.theme) ? parsed.theme : 'dark',
-            shakeThemeEnabled: parsed.shakeThemeEnabled === true,
-          });
+            shakeThemeEnabled: introSeen ? parsed.shakeThemeEnabled === true : true,
+            remindersEnabled: parsed.remindersEnabled !== false,
+            introSeen,
+            introVersion: introSeen ? INTRO_VERSION : 0,
+          };
+          setSettings(next);
+          if (!introSeen) {
+            void AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(
+              () => undefined,
+            );
+          }
         }
       } catch {
         /* ignore */
+      } finally {
+        if (!cancelled) {
+          setReady(true);
+        }
       }
     })();
     return () => {
@@ -79,14 +98,37 @@ export function SettingsProvider({children}) {
     });
   }, []);
 
+  const setRemindersEnabled = useCallback(enabled => {
+    setSettings(prev => {
+      const next = {...prev, remindersEnabled: enabled === true};
+      void AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(
+        () => undefined,
+      );
+      return next;
+    });
+  }, []);
+
+  const completeIntro = useCallback(() => {
+    setSettings(prev => {
+      const next = {...prev, introSeen: true, introVersion: INTRO_VERSION, shakeThemeEnabled: true};
+      void AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(
+        () => undefined,
+      );
+      return next;
+    });
+  }, []);
+
   const value = useMemo(
     () => ({
       ...settings,
+      ready,
       setLocale,
       setTheme,
       setShakeThemeEnabled,
+      setRemindersEnabled,
+      completeIntro,
     }),
-    [settings, setLocale, setTheme, setShakeThemeEnabled],
+    [settings, ready, setLocale, setTheme, setShakeThemeEnabled, setRemindersEnabled, completeIntro],
   );
 
   return (

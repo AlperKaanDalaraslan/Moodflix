@@ -26,11 +26,14 @@ import { PosterImage } from '../components/PosterImage';
 import { useAuth } from '../context/AuthContext';
 import { useProfile } from '../context/ProfileContext';
 import { useSettings } from '../context/SettingsContext';
+import {countryTrendTitle} from '../i18n/countryTrendTitle';
 import { t } from '../i18n/translations';
 import { getTheme } from '../theme/colors';
 import { shadow } from '../theme/shadows';
 import { MOOD_GENRES } from '../constants/moodGenres';
 import { getRecommendations } from '../services/profileService';
+import { MediaKindBadge } from '../components/MediaKindBadge';
+import { catalogKey, openTitle } from '../utils/catalog';
 
 /** Sarı ok — kategori tam listesine gider */
 const ROW_MORE_ARROW = '#FFD60A';
@@ -102,7 +105,6 @@ export function HomeScreen() {
   const [topRated, setTopRated] = useState([]);
   const [nowPlaying, setNowPlaying] = useState([]);
   const [upcoming, setUpcoming] = useState([]);
-  const [genres, setGenres] = useState([]);
   const [genreCatalog, setGenreCatalog] = useState([]);
   const [backendRecoEnabled, setBackendRecoEnabled] = useState(true);
   const [personalFeed, setPersonalFeed] = useState([]);
@@ -151,13 +153,30 @@ export function HomeScreen() {
         fetchUpcoming(locale, 1),
         fetchGenreList(locale),
       ]);
-      setTrending(tr.results.slice(0, 12));
-      setPopular(pop.results.slice(0, 12));
-      setTopRated(top.results.slice(0, 12));
-      setNowPlaying(now.results.slice(0, 12));
-      setUpcoming(up.results.slice(0, 12));
+      const used = new Set();
+      const takeUnique = rows => {
+        const picked = [];
+        for (const item of rows || []) {
+          const key = catalogKey(item);
+          if (!key || used.has(key)) {
+            continue;
+          }
+          used.add(key);
+          picked.push(item);
+          if (picked.length >= 12) {
+            break;
+          }
+        }
+        return picked;
+      };
+      const inTheaters = takeUnique(now.results);
+      const inCountry = takeUnique(tr.results);
+      setNowPlaying(inTheaters);
+      setTrending(inCountry);
+      setUpcoming(takeUnique(up.results));
+      setTopRated(takeUnique(top.results));
+      setPopular(takeUnique(pop.results));
       setGenreCatalog(g.genres);
-      setGenres(g.genres.slice(0, 12));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'err');
     } finally {
@@ -309,6 +328,7 @@ export function HomeScreen() {
             : [];
           detailsById.set(id, {
             ...detail.value,
+            media_type: 'movie',
             genre_ids: genreIds,
           });
         }
@@ -458,8 +478,8 @@ export function HomeScreen() {
     backendRecoEnabled,
   ]);
 
-  const goMovie = id => {
-    navigation.navigate('MovieDetail', { movieId: id });
+  const goMovie = item => {
+    openTitle(navigation, item);
   };
 
   const openCategory = (categoryId, titleKey) => {
@@ -501,7 +521,7 @@ export function HomeScreen() {
       <FlatList
         horizontal
         data={data}
-        keyExtractor={item => String(item.id)}
+        keyExtractor={item => catalogKey(item) || String(item.id)}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{
           paddingHorizontal: 16,
@@ -526,7 +546,7 @@ export function HomeScreen() {
           )
         }
         renderItem={({ item }) => (
-          <Pressable onPress={() => goMovie(item.id)} style={{ width: 120 }}>
+          <Pressable onPress={() => goMovie(item)} style={{ width: 120 }}>
             <View
               style={[
                 shadow.poster,
@@ -545,6 +565,7 @@ export function HomeScreen() {
                   colors={colors}
                   size="medium"
                 />
+                <MediaKindBadge item={item} locale={locale} />
               </View>
             </View>
             <Text
@@ -703,53 +724,11 @@ export function HomeScreen() {
             ) : null
           ) : null}
 
-          {renderRow(t(locale, 'trending'), trending, 'trending', 'trending')}
-          {renderRow(t(locale, 'popular'), popular, 'popular', 'popular')}
-          {renderRow(t(locale, 'topRated'), topRated, 'topRated', 'topRated')}
-          {renderRow(
-            t(locale, 'nowPlaying'),
-            nowPlaying,
-            'nowPlaying',
-            'nowPlaying',
-          )}
+          {renderRow(countryTrendTitle(locale), trending, 'trending', 'trending')}
+          {renderRow(t(locale, 'nowPlaying'), nowPlaying, 'nowPlaying', 'nowPlaying')}
           {renderRow(t(locale, 'upcoming'), upcoming, 'upcoming', 'upcoming')}
-
-          <View style={styles.section}>
-            <Text
-              style={[
-                styles.sectionTitle,
-                styles.sectionHeadingBlock,
-                { color: colors.text },
-              ]}
-            >
-              {t(locale, 'categories')}
-            </Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 16, gap: 10 }}
-            >
-              {genres.map(g => (
-                <TouchableOpacity
-                  key={g.id}
-                  onPress={() =>
-                    navigation.navigate('Discover', { initialGenreId: g.id })
-                  }
-                  style={[
-                    styles.chip,
-                    {
-                      borderColor: colors.primary,
-                      backgroundColor: colors.surfaceElevated,
-                    },
-                  ]}
-                >
-                  <Text style={{ color: colors.text, fontWeight: '600' }}>
-                    {g.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
+          {renderRow(t(locale, 'topRated'), topRated, 'topRated', 'topRated')}
+          {renderRow(t(locale, 'popular'), popular, 'popular', 'popular')}
         </ScrollView>
       )}
     </SafeAreaView>
@@ -796,20 +775,10 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
   },
   sectionHeaderTitle: { flex: 1, minWidth: 0 },
-  sectionHeadingBlock: {
-    paddingHorizontal: 16,
-    marginBottom: 12,
-  },
   seeAllText: {
     fontSize: 14,
     fontWeight: '800',
     letterSpacing: -0.15,
-  },
-  chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 999,
-    borderWidth: 1,
   },
   rowEndMore: {
     justifyContent: 'center',

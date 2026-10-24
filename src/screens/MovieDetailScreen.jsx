@@ -11,14 +11,16 @@ import {
   View,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {fetchMovieDetail, hasApiKey} from '../api/tmdbClient';
+import {fetchTitleDetail, hasApiKey} from '../api/tmdbClient';
 import {PosterImage} from '../components/PosterImage';
+import {WhereToWatch} from '../components/WhereToWatch';
 import {TrailerModal} from '../components/TrailerModal';
 import {useFavorites} from '../context/FavoritesContext';
 import {useSettings} from '../context/SettingsContext';
 import {t} from '../i18n/translations';
 import {getTheme} from '../theme/colors';
 import {shadow} from '../theme/shadows';
+import {kindLabel} from '../utils/catalog';
 
 export function MovieDetailScreen() {
   const {params} = useRoute();
@@ -33,6 +35,7 @@ export function MovieDetailScreen() {
   const [trailerOpen, setTrailerOpen] = useState(false);
 
   const movieId = params?.movieId;
+  const mediaType = params?.mediaType === 'tv' ? 'tv' : 'movie';
 
   useEffect(() => {
     setTrailerOpen(false);
@@ -52,20 +55,20 @@ export function MovieDetailScreen() {
     setLoading(true);
     setError(null);
     try {
-      const m = await fetchMovieDetail(locale, movieId);
+      const m = await fetchTitleDetail(locale, movieId, mediaType);
       setMovie(m);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'err');
     } finally {
       setLoading(false);
     }
-  }, [locale, movieId]);
+  }, [locale, mediaType, movieId]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const fav = movie ? isFavorite(movie.id) : false;
+  const fav = movie ? isFavorite(movie) : false;
 
   const onToggleFavorite = useCallback(() => {
     if (!movie) {
@@ -95,7 +98,9 @@ export function MovieDetailScreen() {
   )?.key;
 
   const director =
-    movie?.credits?.crew?.find(c => c.job === 'Director')?.name ?? '—';
+    movie?.credits?.crew?.find(c => c.job === 'Director')?.name ??
+    movie?.created_by?.[0]?.name ??
+    '—';
   const writer =
     movie?.credits?.crew?.find(c => c.job === 'Writer' || c.job === 'Screenplay')
       ?.name ?? '—';
@@ -166,8 +171,14 @@ export function MovieDetailScreen() {
 
           <Text style={[styles.title, {color: colors.text}]}>{movie.title}</Text>
           <Text style={[styles.metaLine, {color: colors.textMuted}]}>
-            {year} · {t(locale, 'rating')}: ★ {movie.vote_average.toFixed(1)}
+            {kindLabel(movie, locale)} · {year} · {t(locale, 'rating')}: ★{' '}
+            {(movie.vote_average ?? 0).toFixed(1)}
+            {mediaType === 'tv' && movie.number_of_seasons
+              ? ` · ${movie.number_of_seasons} ${t(locale, 'seasons')}`
+              : ''}
           </Text>
+
+          <WhereToWatch movie={movie} locale={locale} colors={colors} />
 
           <View style={styles.tags}>
             {(movie.genres ?? []).slice(0, 4).map(g => (
@@ -183,7 +194,9 @@ export function MovieDetailScreen() {
               {backgroundColor: colors.surfaceElevated, borderColor: colors.border},
               shadow.soft,
             ]}>
-            <Text style={{color: colors.textMuted}}>{t(locale, 'director')}</Text>
+            <Text style={{color: colors.textMuted}}>
+              {mediaType === 'tv' ? t(locale, 'creator') : t(locale, 'director')}
+            </Text>
             <Text style={{color: colors.text, fontWeight: '700', marginTop: 4}}>{director}</Text>
             <Text style={{color: colors.textMuted, marginTop: 10}}>{t(locale, 'writer')}</Text>
             <Text style={{color: colors.text, fontWeight: '700', marginTop: 4}}>{writer}</Text>
@@ -220,7 +233,15 @@ export function MovieDetailScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{paddingHorizontal: 16, gap: 12}}
           renderItem={({item}) => (
-            <View style={{width: 92}}>
+            <Pressable
+              disabled={item?.id == null}
+              onPress={() =>
+                navigation.navigate('PersonDetail', {
+                  personId: item.id,
+                  name: item.name,
+                })
+              }
+              style={{width: 92}}>
               <View style={{aspectRatio: 1, borderRadius: 999, overflow: 'hidden'}}>
                 <PosterImage posterPath={item.profile_path} colors={colors} size="small" />
               </View>
@@ -230,7 +251,7 @@ export function MovieDetailScreen() {
               <Text numberOfLines={2} style={{color: colors.textMuted, fontSize: 12}}>
                 {item.character}
               </Text>
-            </View>
+            </Pressable>
           )}
         />
       </ScrollView>

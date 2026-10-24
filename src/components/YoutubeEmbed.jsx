@@ -73,6 +73,83 @@ function buildEmbedHtml(videoId, {autoPlay, muted, controls, cinemaMode, coverZo
 </html>`;
 }
 
+/** Kaydır kartı: oynatma başlayana kadar YouTube’un kendi bekleme karesi görünmesin. */
+function buildPlaybackHtml(videoId, {autoPlay, muted, controls, loop, captionsOn, captionLang}) {
+  const playerVars = {
+    playsinline: 1,
+    rel: 0,
+    modestbranding: 1,
+    iv_load_policy: 3,
+    fs: 0,
+    disablekb: 1,
+    controls: controls ? 1 : 0,
+    autoplay: autoPlay ? 1 : 0,
+    mute: muted ? 1 : 0,
+    origin: 'https://www.youtube-nocookie.com',
+  };
+  if (loop) {
+    playerVars.loop = 1;
+    playerVars.playlist = videoId;
+  }
+  if (captionsOn) {
+    playerVars.cc_load_policy = 1;
+    if (captionLang) {
+      playerVars.cc_lang_pref = captionLang;
+      playerVars.hl = captionLang;
+    }
+  }
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <style>
+    html, body { margin: 0; padding: 0; background: #000; height: 100%; width: 100%; overflow: hidden; }
+    #player { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
+    #player iframe {
+      position: absolute !important;
+      top: 50% !important;
+      left: 50% !important;
+      width: 100% !important;
+      height: 100% !important;
+      min-width: 100% !important;
+      min-height: 100% !important;
+      transform: translate(-50%, -50%) scale(1.42);
+      border: 0;
+    }
+  </style>
+</head>
+<body>
+  <div id="player"></div>
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script>
+    var told = false;
+    function tell(msg) {
+      if (told || !window.ReactNativeWebView) return;
+      told = true;
+      window.ReactNativeWebView.postMessage(msg);
+    }
+    function onYouTubeIframeAPIReady() {
+      new YT.Player('player', {
+        videoId: ${JSON.stringify(videoId)},
+        playerVars: ${JSON.stringify(playerVars)},
+        events: {
+          onReady: function (e) {
+            try { e.target.playVideo(); } catch (err) {}
+          },
+          onStateChange: function (e) {
+            if (e.data === 1) tell('playing');
+          },
+          onError: function () { tell('error'); }
+        }
+      });
+    }
+    setTimeout(function () { tell('timeout'); }, 12000);
+  </script>
+</body>
+</html>`;
+}
+
 /** Mobil Safari UA YouTube’da “Diğer videolar” şeridini açıyor; kaydır kartında masaüstü oynatıcı. */
 const SWIPE_WEBVIEW_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -95,7 +172,8 @@ const WEBVIEW_UA = Platform.select({
  * @param {boolean} captionsOn — Altyazıyı aç (Kaydır).
  * @param {string} captionLang — cc_lang_pref (tr / en).
  * @param {boolean} loop — Bittiğinde YouTube son ekranında kalmaması için (playlist=aynı id gerekir).
- * @param {() => void} onShellLoadEnd — Kaydır kartı: ebeveyn tek spinner göstersin diye WebView yüklendiğinde (veya hata).
+ * @param {() => void} onShellLoadEnd — Kaydır kartı: video oynayınca (veya hata) ebeveyn poster animasyonunu kaldırsın.
+ * @param {boolean} waitForPlayback — Oynatma başlayana kadar gömülü beklemeyi gizle.
  */
 export function YoutubeEmbed({
   videoId,
@@ -110,12 +188,23 @@ export function YoutubeEmbed({
   loop = false,
   captionsOn = false,
   captionLang = 'tr',
+  waitForPlayback = false,
   onShellLoadEnd,
 }) {
   const safeId = sanitizeVideoId(videoId);
   const html = useMemo(() => {
     if (!safeId) {
       return null;
+    }
+    if (waitForPlayback) {
+      return buildPlaybackHtml(safeId, {
+        autoPlay,
+        muted,
+        controls,
+        loop,
+        captionsOn,
+        captionLang,
+      });
     }
     return buildEmbedHtml(safeId, {
       autoPlay,
@@ -137,6 +226,7 @@ export function YoutubeEmbed({
     loop,
     muted,
     safeId,
+    waitForPlayback,
   ]);
 
   if (!safeId || !html) {
@@ -164,8 +254,19 @@ export function YoutubeEmbed({
                 </View>
               )
         }
+        onMessage={event => {
+          if (!waitForPlayback) {
+            return;
+          }
+          const data = event?.nativeEvent?.data;
+          if (data === 'playing' || data === 'error' || data === 'timeout') {
+            onShellLoadEnd?.();
+          }
+        }}
         onLoadEnd={() => {
-          onShellLoadEnd?.();
+          if (!waitForPlayback) {
+            onShellLoadEnd?.();
+          }
         }}
         onError={() => {
           onShellLoadEnd?.();

@@ -12,8 +12,11 @@ import {
 } from 'react-native';
 import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
 import {fetchCategoryBrowse, fetchGenreList, hasApiKey} from '../api/tmdbClient';
+import {MediaKindBadge} from '../components/MediaKindBadge';
 import {PosterImage} from '../components/PosterImage';
+import {catalogKey, openTitle} from '../utils/catalog';
 import {useSettings} from '../context/SettingsContext';
+import {countryTrendTitle} from '../i18n/countryTrendTitle';
 import {t} from '../i18n/translations';
 import {getTheme, isDarkMode} from '../theme/colors';
 import {shadow} from '../theme/shadows';
@@ -186,7 +189,12 @@ export function CategoryListScreen() {
   const totalPagesRef = useRef(1);
   const pagingRef = useRef(false);
 
-  const title = useMemo(() => (titleKey ? t(locale, titleKey) : ''), [locale, titleKey]);
+  const title = useMemo(() => {
+    if (titleKey === 'trending') {
+      return countryTrendTitle(locale);
+    }
+    return titleKey ? t(locale, titleKey) : '';
+  }, [locale, titleKey]);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -248,7 +256,7 @@ export function CategoryListScreen() {
         return;
       }
       const rows = (res.results ?? []).filter(m => m?.poster_path);
-      rows.forEach(m => seenIds.current.add(m.id));
+      rows.forEach(m => seenIds.current.add(catalogKey(m) || m.id));
       setItems(rows);
       totalPagesRef.current = Math.max(1, Number(res.total_pages) || 1);
       pageRef.current = 1;
@@ -287,10 +295,11 @@ export function CategoryListScreen() {
       const raw = res.results ?? [];
       const merged = [];
       for (const m of raw) {
-        if (!m?.id || seenIds.current.has(m.id) || !m.poster_path) {
+        const key = catalogKey(m) || m.id;
+        if (!m?.id || seenIds.current.has(key) || !m.poster_path) {
           continue;
         }
-        seenIds.current.add(m.id);
+        seenIds.current.add(key);
         merged.push(m);
       }
       if (merged.length) {
@@ -311,8 +320,8 @@ export function CategoryListScreen() {
   }, [loadNextPage]);
 
   const goMovie = useCallback(
-    id => {
-      navigation.navigate('MovieDetail', {movieId: id});
+    item => {
+      openTitle(navigation, item);
     },
     [navigation],
   );
@@ -372,7 +381,7 @@ export function CategoryListScreen() {
   const renderItem = useCallback(
     ({item}) => (
       <Pressable
-        onPress={() => goMovie(item.id)}
+        onPress={() => goMovie(item)}
         style={[styles.cell, {width: colWidth}]}
         accessibilityRole="button"
         android_ripple={{color: 'rgba(255,255,255,0.08)'}}>
@@ -385,6 +394,7 @@ export function CategoryListScreen() {
             ]}>
             <View style={styles.posterInner}>
               <PosterImage posterPath={item.poster_path} colors={colors} size="medium" />
+              <MediaKindBadge item={item} locale={locale} />
             </View>
           </View>
           <View style={styles.cardTextBlock}>
@@ -401,7 +411,7 @@ export function CategoryListScreen() {
         </View>
       </Pressable>
     ),
-    [colWidth, colors, goMovie, theme],
+    [colWidth, colors, goMovie, locale, theme],
   );
 
   const filterHeader = useMemo(
@@ -528,7 +538,7 @@ export function CategoryListScreen() {
           {pickerModals}
           <FlatList
             data={items}
-            keyExtractor={item => String(item.id)}
+            keyExtractor={item => catalogKey(item) || String(item.id)}
             numColumns={2}
             ListHeaderComponent={filterHeader}
             renderItem={renderItem}

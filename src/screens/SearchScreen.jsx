@@ -10,8 +10,9 @@ import {
   View,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {hasApiKey, searchMovies} from '../api/tmdbClient';
+import {hasApiKey, searchMoviesForQuery} from '../api/tmdbClient';
 import {PosterImage} from '../components/PosterImage';
+import {WatchPriceLine} from '../components/WhereToWatch';
 import {SearchEmptyState} from '../components/SearchEmptyState';
 import {useAuth} from '../context/AuthContext';
 import {useProfile} from '../context/ProfileContext';
@@ -19,6 +20,7 @@ import {useSettings} from '../context/SettingsContext';
 import {t} from '../i18n/translations';
 import {getTheme} from '../theme/colors';
 import {shadow} from '../theme/shadows';
+import {kindLabel} from '../utils/catalog';
 
 function normalizeLooseQuery(input) {
   return String(input ?? '')
@@ -73,28 +75,8 @@ export function SearchScreen() {
     setError(null);
     try {
       const raw = q.trim();
-      const loose = normalizeLooseQuery(raw);
-      const variantSet = new Set([raw, loose]);
-      if (loose.includes(' ')) {
-        variantSet.add(loose.split(' ').join(''));
-      }
-      const variants = [...variantSet].filter(x => x.length >= 2).slice(0, 3);
-      const responses = await Promise.all(
-        variants.map(v => searchMovies(locale, v, 1).catch(() => ({results: []}))),
-      );
-      const merged = [];
-      const seen = new Set();
-      responses.forEach(res => {
-        (res.results ?? []).forEach(item => {
-          const id = String(item?.id ?? '');
-          if (!id || seen.has(id)) {
-            return;
-          }
-          seen.add(id);
-          merged.push(item);
-        });
-      });
-      setResults(merged);
+      const res = await searchMoviesForQuery(locale, raw, 1);
+      setResults(res.results ?? []);
       setSearchedFor(raw);
       if (hydrated && isLoggedIn && token) {
         void submitSearchLog(raw);
@@ -155,7 +137,7 @@ export function SearchScreen() {
       ) : (
         <FlatList
           data={results}
-          keyExtractor={item => String(item.id)}
+          keyExtractor={item => `${item.media_type || 'movie'}:${item.id}`}
           numColumns={2}
           columnWrapperStyle={{gap: 12, paddingHorizontal: 16}}
           contentContainerStyle={
@@ -173,11 +155,36 @@ export function SearchScreen() {
           }
           renderItem={({item}) => (
             <TouchableOpacity
-              onPress={() => navigation.navigate('MovieDetail', {movieId: item.id})}
+              onPress={() =>
+                navigation.navigate('MovieDetail', {
+                  movieId: item.id,
+                  mediaType: item.media_type === 'tv' ? 'tv' : 'movie',
+                })
+              }
               style={{flex: 1}}>
               <View style={[shadow.poster, {borderRadius: 16, backgroundColor: '#000'}]}>
                 <View style={{aspectRatio: 2 / 3, borderRadius: 16, overflow: 'hidden'}}>
                   <PosterImage posterPath={item.poster_path} colors={colors} size="medium" />
+                  <View
+                    style={{
+                      position: 'absolute',
+                      left: 8,
+                      top: 8,
+                      borderRadius: 999,
+                      paddingHorizontal: 8,
+                      paddingVertical: 3,
+                      backgroundColor: 'rgba(0,0,0,0.72)',
+                    }}>
+                    <Text
+                      style={{
+                        color: colors.primary,
+                        fontSize: 10,
+                        fontWeight: '700',
+                        letterSpacing: 0.4,
+                      }}>
+                      {kindLabel(item, locale)}
+                    </Text>
+                  </View>
                 </View>
               </View>
               <Text
@@ -185,9 +192,17 @@ export function SearchScreen() {
                 style={{color: colors.text, marginTop: 10, fontWeight: '700', fontSize: 14, letterSpacing: -0.2}}>
                 {item.title}
               </Text>
+              {item.original_title && item.original_title !== item.title ? (
+                <Text
+                  numberOfLines={1}
+                  style={{color: colors.textMuted, marginTop: 2, fontSize: 12, fontWeight: '500'}}>
+                  {item.original_title}
+                </Text>
+              ) : null}
               <Text style={{color: colors.textMuted, marginTop: 4, fontWeight: '600'}}>
-                ★ {item.vote_average.toFixed(1)}
+                ★ {(item.vote_average ?? 0).toFixed(1)}
               </Text>
+              <WatchPriceLine movie={item} locale={locale} colors={colors} lines={2} />
             </TouchableOpacity>
           )}
         />

@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import {discoverMovies, fetchGenreList, fetchPopular, searchMovies} from '../api/tmdbClient';
+import {discoverMovies, fetchGenreList, fetchPopular, searchMoviesForQuery} from '../api/tmdbClient';
 import {PosterImage} from './PosterImage';
 import {
   buildMoviePosterAvatarToken,
@@ -62,7 +62,7 @@ export function MovieAvatarPickerModal({visible, onClose, onSelect, colors, loca
 
   const loadPage = async pageToLoad => {
     if (queryTrim) {
-      const res = await searchMovies(locale, queryTrim, pageToLoad);
+      const res = await searchMoviesForQuery(locale, queryTrim, pageToLoad);
       let rows = (res.results ?? []).filter(x => x?.poster_path);
       if (selectedGenreId != null) {
         rows = rows.filter(x => Array.isArray(x.genre_ids) && x.genre_ids.includes(selectedGenreId));

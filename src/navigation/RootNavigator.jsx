@@ -13,6 +13,7 @@ import {DiscoverScreen} from '../screens/DiscoverScreen';
 import {FavoritesScreen} from '../screens/FavoritesScreen';
 import {HomeScreen} from '../screens/HomeScreen';
 import {MovieDetailScreen} from '../screens/MovieDetailScreen';
+import {PersonScreen} from '../screens/PersonScreen';
 import {ProfileScreen} from '../screens/ProfileScreen';
 import {SearchScreen} from '../screens/SearchScreen';
 import {SwipeScreen} from '../screens/SwipeScreen';
@@ -235,6 +236,11 @@ export function RootNavigator() {
           name="MovieDetail"
           component={MovieDetailScreen}
           options={{title: ''}}
+        />
+        <Stack.Screen
+          name="PersonDetail"
+          component={PersonScreen}
+          options={({route}) => ({title: route.params?.name || ''})}
         />
         <Stack.Screen
           name="CategoryList"

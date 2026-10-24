@@ -11,7 +11,6 @@ import React, {
   useState,
 } from 'react';
 import {
-  ActivityIndicator,
   Animated,
   PanResponder,
   StyleSheet,
@@ -26,7 +25,7 @@ import {
 } from 'react-native-safe-area-context';
 import {
   fetchGenreList,
-  fetchMovieVideosForSwipe,
+  fetchTitleVideosForSwipe,
   fetchNowPlaying,
   fetchPopular,
   fetchTopRated,
@@ -35,12 +34,14 @@ import {
   pickBestYoutubeVideoKey,
 } from '../api/tmdbClient';
 import { PosterImage } from '../components/PosterImage';
+import { WatchPriceLine } from '../components/WhereToWatch';
 import { TrailerModal } from '../components/TrailerModal';
 import { YoutubeEmbed } from '../components/YoutubeEmbed';
 import { useFavorites } from '../context/FavoritesContext';
 import { useSettings } from '../context/SettingsContext';
 import { t } from '../i18n/translations';
 import { getTheme } from '../theme/colors';
+import { catalogKey, kindLabel } from '../utils/catalog';
 
 /** Aynı sayfada hep aynı sırada gelmesin */
 function shuffleArray(items) {
@@ -50,6 +51,35 @@ function shuffleArray(items) {
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
+}
+
+async function mapPool(items, limit, worker) {
+  const out = new Array(items.length);
+  let cursor = 0;
+  const run = async () => {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      out[index] = await worker(items[index]);
+    }
+  };
+  await Promise.all(
+    Array.from({length: Math.min(limit, items.length)}, () => run()),
+  );
+  return out;
+}
+
+async function keepTitlesWithVideo(locale, items) {
+  const checked = await mapPool(items, 4, async movie => {
+    const merged = await fetchTitleVideosForSwipe(
+      locale,
+      movie.id,
+      movie.media_type === 'tv' ? 'tv' : 'movie',
+    );
+    const key = pickBestYoutubeVideoKey(merged);
+    return key ? {...movie, swipeTrailerKey: key} : null;
+  });
+  return checked.filter(Boolean);
 }
 
 /**
@@ -77,17 +107,18 @@ async function fetchSwipeFeedPage(locale) {
  */
 function computeSwipeMetrics(contentH, winW, insetBottom) {
   const CARD_W = Math.min(404, Math.round(winW * 0.946));
-  const infoH = 112;
-  const headerBlock = 88;
-  const deckPeek = 22;
-  const actionsRowH = 10 + 64 + Math.max(insetBottom, 10) + 6;
+  const infoH = 128;
+  const headerBlock = 72;
+  const deckPeek = 12;
+  const actionsRowH = 8 + 64 + Math.max(insetBottom, 10) + 4;
   const reserved = headerBlock + deckPeek + actionsRowH + 8;
-  const available = Math.max(200, Math.floor(contentH - reserved));
-  let mediaH = Math.round((CARD_W * 9) / 16);
+  const available = Math.max(240, Math.floor(contentH - reserved));
+  const room = Math.max(210, available - infoH);
+  let mediaH = Math.min(room, Math.round(CARD_W * 0.92));
   let width = CARD_W;
-  if (mediaH + infoH > available) {
-    mediaH = Math.max(168, available - infoH);
-    width = Math.min(CARD_W, Math.round((mediaH * 16) / 9));
+  if (mediaH < 210) {
+    mediaH = Math.max(190, available - infoH);
+    width = Math.min(CARD_W, Math.round(mediaH / 0.92));
   }
   return {
     CARD_W: width,
@@ -105,6 +136,110 @@ function genreLine(movie, genreById) {
     .map(id => genreById[id])
     .filter(Boolean);
   return names.length ? names.join(' · ') : null;
+}
+
+function FilmPulse({color, top, left}) {
+  const pulse = React.useRef(new Animated.Value(0)).current;
+  React.useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 850,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 0,
+          duration: 850,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+  const scale = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.82, 1.12],
+  });
+  const opacity = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0.4],
+  });
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        styles.pulseAnchor,
+        {
+          top,
+          left,
+          borderColor: color,
+          opacity,
+          transform: [{scale}],
+        },
+      ]}
+    >
+      <View style={[styles.pulseCore, {backgroundColor: color}]} />
+    </Animated.View>
+  );
+}
+
+function SwipeDeckSkeleton({colors, metrics}) {
+  const pulse = React.useRef(new Animated.Value(0.45)).current;
+  React.useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 700,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 0.45,
+          duration: 700,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+  return (
+    <View style={styles.deckColumn}>
+      <View style={[styles.deckSlot, {height: metrics.CARD_H + 22, width: metrics.CARD_W}]}>
+        <Animated.View
+          style={[
+            styles.skeletonCard,
+            {
+              width: metrics.CARD_W,
+              height: metrics.CARD_H,
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              opacity: pulse,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.skeletonPoster,
+              {height: metrics.POSTER_CLIP_H, backgroundColor: colors.surfaceElevated},
+            ]}
+          >
+            <FilmPulse
+              color={colors.primary}
+              top={(metrics.POSTER_CLIP_H - 78) / 2}
+              left={(metrics.CARD_W - 78) / 2}
+            />
+          </View>
+          <View style={styles.skeletonLines}>
+            <View style={[styles.skeletonLine, styles.skeletonLineWide, {backgroundColor: colors.border}]} />
+            <View style={[styles.skeletonLine, {backgroundColor: colors.border}]} />
+          </View>
+        </Animated.View>
+      </View>
+    </View>
+  );
 }
 
 function SwipeCard({
@@ -238,14 +373,19 @@ function SwipeCard({
                 colors={colors}
                 size="backdrop"
                 resizeMode="cover"
+                style={styles.posterFill}
               />
             ) : (
-              <View style={styles.mediaShellInner}>
+              <View style={[styles.mediaShellInner, { height: metrics.POSTER_CLIP_H }]}>
                 {showEmbed ? (
                   <YoutubeEmbed
-                    key={`${movie.id}-${trailerKey}`}
+                    key={`${movie.media_type || 'movie'}-${movie.id}-${trailerKey}`}
                     videoId={trailerKey}
-                    style={styles.embedInCard}
+                    style={[
+                      styles.embedInCard,
+                      { height: metrics.POSTER_CLIP_H },
+                      trailerSurfaceBusy ? styles.embedHidden : null,
+                    ]}
                     flexLayout
                     coverZoom
                     loop
@@ -255,20 +395,18 @@ function SwipeCard({
                     muted={false}
                     controls={false}
                     passThroughTouches
+                    waitForPlayback
                     onShellLoadEnd={onEmbedShellLoadEnd}
                   />
-                ) : !trailerSurfaceBusy ? (
+                ) : null}
+                {!showEmbed || trailerSurfaceBusy ? (
                   <PosterImage
                     posterPath={movie.poster_path}
                     colors={colors}
                     size="backdrop"
                     resizeMode="cover"
+                    style={styles.posterFill}
                   />
-                ) : null}
-                {trailerSurfaceBusy ? (
-                  <View style={styles.videoLoadingOverlay} pointerEvents="none">
-                    <ActivityIndicator color={colors.primary} size="large" />
-                  </View>
                 ) : null}
               </View>
             )}
@@ -313,6 +451,13 @@ function SwipeCard({
               {t(locale, 'swipeStampPass')}
             </Text>
           </Animated.View>
+          {trailerSurfaceBusy && !trailerModalOpen ? (
+            <FilmPulse
+              color={colors.primary}
+              top={(metrics.POSTER_CLIP_H - 78) / 2}
+              left={(metrics.CARD_W - 78) / 2}
+            />
+          ) : null}
         </View>
 
         <View
@@ -329,19 +474,27 @@ function SwipeCard({
             numberOfLines={2}
             style={[styles.title, { color: colors.text }]}
           >
-            {movie.title}
+            {movie.title || movie.name}
           </Text>
           {year || genres ? (
             <Text
               numberOfLines={1}
               style={[styles.metaLine, { color: colors.textMuted }]}
             >
-              {[year, genres].filter(Boolean).join(' · ')}
+              {[kindLabel(movie, locale), year, genres].filter(Boolean).join(' · ')}
             </Text>
-          ) : null}
+          ) : (
+            <Text
+              numberOfLines={1}
+              style={[styles.metaLine, { color: colors.textMuted }]}
+            >
+              {kindLabel(movie, locale)}
+            </Text>
+          )}
           <Text style={[styles.rating, { color: colors.textMuted }]}>
-            ★ {movie.vote_average.toFixed(1)}
+            ★ {(Number(movie.vote_average) || 0).toFixed(1)}
           </Text>
+          <WatchPriceLine movie={movie} locale={locale} colors={colors} lines={2} />
         </View>
       </View>
     </Animated.View>
@@ -425,19 +578,32 @@ export function SwipeScreen() {
       }
       setError(null);
       try {
-        let res = await fetchSwipeFeedPage(locale);
-        let next = shuffleArray((res.results ?? []).filter(m => m.poster_path));
-        if (next.length === 0) {
-          res = await fetchPopular(locale, 1 + Math.floor(Math.random() * 10));
-          next = shuffleArray((res.results ?? []).filter(m => m.poster_path));
+        const collected = [];
+        const seen = new Set();
+        for (let attempt = 0; attempt < 5 && collected.length < 8; attempt += 1) {
+          let res = await fetchSwipeFeedPage(locale);
+          let batch = (res.results ?? []).filter(m => m?.poster_path && m.id != null);
+          if (!batch.length) {
+            res = await fetchPopular(locale, 1 + Math.floor(Math.random() * 10));
+            batch = (res.results ?? []).filter(m => m?.poster_path && m.id != null);
+          }
+          const playable = await keepTitlesWithVideo(locale, batch);
+          for (const movie of playable) {
+            const key = catalogKey(movie) || String(movie.id);
+            if (seen.has(key)) {
+              continue;
+            }
+            seen.add(key);
+            collected.push(movie);
+          }
         }
+        const next = shuffleArray(collected);
         if (opts?.replace) {
           setDeck(next);
         } else {
           setDeck(prev => {
-            const seen = new Set(prev.map(m => m.id));
-            const fresh = next.filter(m => !seen.has(m.id));
-            return [...prev, ...fresh];
+            const have = new Set(prev.map(m => catalogKey(m) || String(m.id)));
+            return [...prev, ...next.filter(m => !have.has(catalogKey(m) || String(m.id)))];
           });
         }
       } catch (e) {
@@ -504,13 +670,23 @@ export function SwipeScreen() {
       setTrailerFetchDoneId(null);
       return;
     }
+    if (top.swipeTrailerKey) {
+      setTrailerKey(top.swipeTrailerKey);
+      setTrailerLoading(false);
+      setTrailerFetchDoneId(top.id);
+      return;
+    }
     let cancelled = false;
     setTrailerFetchDoneId(null);
     setTrailerKey(null);
     setTrailerLoading(true);
     void (async () => {
       try {
-        const merged = await fetchMovieVideosForSwipe(locale, top.id);
+        const merged = await fetchTitleVideosForSwipe(
+          locale,
+          top.id,
+          top.media_type === 'tv' ? 'tv' : 'movie',
+        );
         const key = pickBestYoutubeVideoKey(merged);
         if (!cancelled) {
           setTrailerKey(key);
@@ -529,7 +705,16 @@ export function SwipeScreen() {
     return () => {
       cancelled = true;
     };
-  }, [locale, top?.id]);
+  }, [locale, top?.id, top?.media_type, top?.swipeTrailerKey]);
+
+  useEffect(() => {
+    if (!top?.id || trailerLoading || trailerFetchDoneId !== top.id || trailerKey) {
+      return;
+    }
+    setDeck(prev =>
+      prev.filter(movie => (catalogKey(movie) || String(movie.id)) !== String(top.id) && catalogKey(movie) !== catalogKey(top)),
+    );
+  }, [top, trailerFetchDoneId, trailerKey, trailerLoading]);
 
   useEffect(() => {
     setTrailerModalOpen(false);
@@ -544,8 +729,9 @@ export function SwipeScreen() {
       if (dir === 'like') {
         const ok = addFavorite({
           id: m.id,
-          title: m.title,
+          title: m.title || m.name,
           poster_path: m.poster_path ?? m.backdrop_path ?? null,
+          media_type: m.media_type === 'tv' ? 'tv' : 'movie',
         });
         if (ok) {
           setAddedBanner(t(locale, 'swipeAddedFavorite'));
@@ -559,7 +745,7 @@ export function SwipeScreen() {
       }
       setDeck(d => {
         const head = d[0];
-        if (!head || Number(head.id) !== Number(m.id)) {
+        if (!head || catalogKey(head) !== catalogKey(m)) {
           return d;
         }
         return d.slice(1);
@@ -624,9 +810,7 @@ export function SwipeScreen() {
             </TouchableOpacity>
           </View>
         ) : loading && !top ? (
-          <View style={styles.center}>
-            <ActivityIndicator color={colors.primary} />
-          </View>
+          <SwipeDeckSkeleton colors={colors} metrics={metrics} />
         ) : !top ? (
           <View style={styles.center}>
             <Text style={{ color: colors.text, textAlign: 'center' }}>
@@ -868,23 +1052,75 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   mediaShellInner: {
-    flex: 1,
     width: '100%',
-    minHeight: 0,
     position: 'relative',
     backgroundColor: '#000',
+    overflow: 'hidden',
   },
   videoLoadingOverlay: {
     ...StyleSheet.absoluteFillObject,
+    zIndex: 6,
+  },
+  pulseAnchor: {
+    position: 'absolute',
+    width: 78,
+    height: 78,
+    borderRadius: 39,
+    borderWidth: 3,
+    zIndex: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#000',
-    zIndex: 4,
+  },
+  pulseCore: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+  },
+  posterFill: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
+    zIndex: 3,
+    borderRadius: 0,
+  },
+  embedHidden: {
+    opacity: 0,
+  },
+  skeletonCard: {
+    borderRadius: 22,
+    overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  skeletonPoster: {
+    width: '100%',
+    overflow: 'hidden',
+  },
+  skeletonLines: {
+    paddingHorizontal: 14,
+    paddingTop: 16,
+    gap: 10,
+  },
+  skeletonLine: {
+    height: 12,
+    width: '46%',
+    borderRadius: 8,
+  },
+  skeletonLineWide: {
+    width: '78%',
+    height: 16,
   },
   embedInCard: {
-    flex: 1,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     width: '100%',
-    minHeight: 0,
+    height: '100%',
   },
   trailerCheckingLine: {
     marginTop: 6,

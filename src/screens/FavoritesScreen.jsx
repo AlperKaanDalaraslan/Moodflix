@@ -11,9 +11,11 @@ import {
   View,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {fetchMovieDetail, searchMovies} from '../api/tmdbClient';
+import {fetchTitleDetail, searchMoviesForQuery} from '../api/tmdbClient';
 import {FavoritesEmptyState} from '../components/FavoritesEmptyState';
+import {MediaKindBadge} from '../components/MediaKindBadge';
 import {PosterImage} from '../components/PosterImage';
+import {catalogKey, mediaTypeOf} from '../utils/catalog';
 import {useFavorites} from '../context/FavoritesContext';
 import {useSettings} from '../context/SettingsContext';
 import {t} from '../i18n/translations';
@@ -42,6 +44,7 @@ const FavoriteCell = memo(function FavoriteCell({
           onPress={() => onOpen(item)}
           style={styles.posterTap}>
           <PosterImage posterPath={posterPath} colors={colors} size="medium" />
+          <MediaKindBadge item={item} locale={locale} />
         </TouchableOpacity>
         <Pressable
           accessibilityRole="button"
@@ -121,7 +124,7 @@ export function FavoritesScreen() {
   const hydratePosters = useCallback(
     async items => {
       const need = items.filter(item => {
-        const key = String(item.id);
+        const key = catalogKey(item) || String(item.id);
         if (item.poster_path || posterByIdRef.current[key]) {
           return false;
         }
@@ -136,12 +139,12 @@ export function FavoritesScreen() {
       const nextPoster = {};
       const nextTmdb = {};
       for (const item of need.slice(0, 8)) {
-        const key = String(item.id);
+        const key = catalogKey(item) || String(item.id);
         resolving.current.add(key);
         const numericId = Number(item.id);
         try {
           if (Number.isFinite(numericId)) {
-            const m = await fetchMovieDetail(locale, numericId);
+            const m = await fetchTitleDetail(locale, numericId, mediaTypeOf(item));
             if (m?.poster_path) {
               nextPoster[key] = m.poster_path;
               nextTmdb[key] = numericId;
@@ -149,7 +152,7 @@ export function FavoritesScreen() {
             }
           }
           if (item?.title) {
-            const res = await searchMovies(locale, item.title, 1);
+            const res = await searchMoviesForQuery(locale, item.title, 1);
             const first = (res.results ?? []).find(x => x?.poster_path);
             if (first?.poster_path) {
               nextPoster[key] = first.poster_path;
@@ -194,12 +197,15 @@ export function FavoritesScreen() {
 
   const onOpen = useCallback(
     item => {
-      const key = String(item.id);
+      const key = catalogKey(item) || String(item.id);
       const detailId = Number.isFinite(Number(item.id))
         ? Number(item.id)
         : Number(tmdbIdByKey[key]);
       if (Number.isFinite(detailId)) {
-        navigation.navigate('MovieDetail', {movieId: detailId});
+        navigation.navigate('MovieDetail', {
+          movieId: detailId,
+          mediaType: mediaTypeOf(item),
+        });
       }
     },
     [navigation, tmdbIdByKey],
@@ -207,7 +213,7 @@ export function FavoritesScreen() {
 
   const renderItem = useCallback(
     ({item}) => {
-      const key = String(item.id);
+      const key = catalogKey(item) || String(item.id);
       return (
         <FavoriteCell
           item={{...item, _tmdbId: tmdbIdByKey[key]}}
@@ -263,7 +269,7 @@ export function FavoritesScreen() {
       ) : (
         <FlatList
           data={filtered}
-          keyExtractor={item => String(item.id)}
+          keyExtractor={item => catalogKey(item) || String(item.id)}
           numColumns={2}
           renderItem={renderItem}
           columnWrapperStyle={styles.row}

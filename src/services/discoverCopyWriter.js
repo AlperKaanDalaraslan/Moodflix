@@ -64,7 +64,44 @@ function shortTitle(title, fallback) {
 function feelLine(mood, locale) {
   const tr = String(locale || '').startsWith('tr');
   const map = tr ? MOOD_TR : MOOD_EN;
-  return map[mood] || (tr ? 'bu geceye bir yön arıyorsun' : 'you want a direction for tonight');
+  return map[mood] || (tr ? 'sana yakın bir his arıyorsun' : 'you want something that fits');
+}
+
+function flavorFromHits(hits, tr) {
+  const blob = (hits || []).join(' ');
+  if (/kar|kis|snow|winter|noel|christmas|yilbasi|buz|ice|frost|blizzard|kayak/.test(blob)) {
+    return tr
+      ? 'Kar, soğuk ve dışarıya kapanmış bir hava bunun içinde.'
+      : 'Snow, cold, and a shut-in feeling run through it.';
+  }
+  if (/yagmur|rain|storm|firtina/.test(blob)) {
+    return tr ? 'Yağmur ve ıslak bir gece bunun içinde.' : 'Rain and a wet night run through it.';
+  }
+  if (/ask|romantik|love|romantic/.test(blob)) {
+    return tr ? 'Yakınlık ve ilişki bunun merkezinde.' : 'Closeness sits at the center of it.';
+  }
+  if (/korku|horror|gerilim|ghost/.test(blob)) {
+    return tr ? 'Tedirginlik bunun dokusu.' : 'The unease is the texture.';
+  }
+  if (/yaz|plaj|beach|gunes|sahil|palmiye|deniz|okyanus|ocean|tatil|summer|sea/.test(blob)) {
+    return tr
+      ? 'Güneş, deniz ve ferah bir hava bunun içinde.'
+      : 'Sun, sea, and an open air run through it.';
+  }
+  if (/cheerful|neseli|komedi|heartwarm/.test(blob)) {
+    return tr
+      ? 'Sıcak, neşeli, içini açan bir hali var.'
+      : 'It is warm, cheerful, and easy to sink into.';
+  }
+  if (/twist|beyin|gizem|bulmaca/.test(blob)) {
+    return tr
+      ? 'Ters köşe kuran, kafa kurcalayan bir hikâye.'
+      : 'It is a story that twists and will not leave your head.';
+  }
+  if (hits?.length) {
+    return tr ? 'Yazdığın hal bu hikâyenin içinde geçiyor.' : 'The feeling you wrote runs through this one.';
+  }
+  return tr ? 'Bu, o havaya yakın duranlardan.' : 'This sits close to that mood.';
 }
 
 export function writeHook(movie, ctx, index, used) {
@@ -75,36 +112,60 @@ export function writeHook(movie, ctx, index, used) {
   const prompt = String(ctx.prompt || '')
     .trim()
     .replace(/\s+/g, ' ')
-    .slice(0, 36);
+    .slice(0, 48);
+  if (prompt && movie?.briefLoose) {
+    const loose = tr
+      ? `${title}, “${prompt}” cümlesine en yakın duranlardan.`
+      : `${title} is one of the closer matches for “${prompt}”.`;
+    if (!used.has(loose)) {
+      used.add(loose);
+      return loose;
+    }
+  }
   const g = genre
     ? tr
       ? genre.toLocaleLowerCase('tr-TR')
       : genre.toLowerCase()
     : '';
+  const flavor = flavorFromHits(movie?.briefHits, tr);
 
-  const trLines = [
-    `${title} bu geceye oturuyor çünkü ${feel}. İzlemeye değecek kadar yakın, özet okumaya gerek yok.`,
-    prompt
-      ? `“${prompt}” yazdıysan ${title} tam o hale giriyor. ${g ? `${g} perdesinden, ` : ''}sessizce içine işliyor.`
-      : `${title}${g ? ` ${g} gibi duruyor` : ''} ama asıl işi senin halini tutmak. ${feel}.`,
-    `Bu gece ${feel}. ${title} o hissi örtbas etmiyor, yanında oturuyor.`,
-    `${title} süs diye listede değil. ${feel} ya — bu film o boşluğu dolduruyor.`,
-    g
-      ? `${g} diye geçme. ${title} senin geceni ciddiye alıyor; bir iki sahne yeter, yakalıyor.`
-      : `${title} senin geceni ciddiye alıyor. Bir iki sahne yeter, yakalıyor.`,
-  ];
+  const trLines = prompt
+    ? [
+        `${title}, “${prompt}” için duruyor. ${flavor}`,
+        `${flavor} ${title} o günün içine oturuyor.`,
+        `“${prompt}” deyince ${title} o havayı taşıyor. ${flavor}`,
+        `${title} bu his için seçildi: “${prompt}”. ${flavor}`,
+        g
+          ? `${title} ${g} tarafında, ama asıl bağı “${prompt}”. ${flavor}`
+          : `${flavor} ${title} tam o cümlenin karşılığı.`,
+      ]
+    : [
+        `${title} bu listeye girdi çünkü ${feel}.`,
+        `${title}${g ? ` ${g} tarafında` : ''}, asıl işi senin haline yakın durmak.`,
+        `${title} o hissi örtbas etmiyor, yanında duruyor.`,
+        `${title} süs diye değil, o boşluk için burada.`,
+        `${title} bu havayı ciddiye alıyor.`,
+      ];
 
-  const enLines = [
-    `${title} fits tonight because ${feel}. Close enough to watch — no need to read the plot.`,
-    prompt
-      ? `If you wrote “${prompt}”, ${title} walks into that feeling. ${g ? `A ${g} tint, ` : ''}it gets under the skin.`
-      : `${title}${g ? ` looks like ${g}` : ''}, but it is here to hold your mood. ${feel}.`,
-    `Tonight ${feel}. ${title} does not paper over it; it sits with you.`,
-    `${title} is not decoration. ${feel} — this one fills that gap.`,
-    g
-      ? `Don’t shrug it off as ${g}. ${title} takes your night seriously; a couple of scenes and you’re in.`
-      : `${title} takes your night seriously. A couple of scenes and you’re in.`,
-  ];
+  const enLines = prompt
+    ? [
+        `${title} is here for “${prompt}”. ${flavor}`,
+        `${flavor} ${title} sits inside that day.`,
+        `“${prompt}” points at ${title}. ${flavor}`,
+        `${title} was picked for this feeling: “${prompt}”. ${flavor}`,
+        g
+          ? `${title} leans ${g}, but the real tie is “${prompt}”. ${flavor}`
+          : `${flavor} ${title} is the match for that line.`,
+      ]
+    : [
+        `${title} fits tonight because ${feel}. Close enough to watch — no need to read the plot.`,
+        `${title}${g ? ` looks like ${g}` : ''}, but it is here to hold your mood. ${feel}.`,
+        `Tonight ${feel}. ${title} does not paper over it; it sits with you.`,
+        `${title} is not decoration. ${feel} — this one fills that gap.`,
+        g
+          ? `Don’t shrug it off as ${g}. ${title} takes your night seriously; a couple of scenes and you’re in.`
+          : `${title} takes your night seriously. A couple of scenes and you’re in.`,
+      ];
 
   const lines = tr ? trLines : enLines;
   const pick =

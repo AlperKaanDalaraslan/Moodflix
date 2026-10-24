@@ -119,7 +119,10 @@ export function ProfileMoviesScreen() {
                 disabled={!canOpen}
                 onPress={() => {
                   if (canOpen) {
-                    navigation.navigate('MovieDetail', {movieId: detailId});
+                    navigation.navigate('MovieDetail', {
+                      movieId: detailId,
+                      mediaType: item.media_type === 'tv' ? 'tv' : 'movie',
+                    });
                   }
                 }}>
                 <View style={styles.avatar}>

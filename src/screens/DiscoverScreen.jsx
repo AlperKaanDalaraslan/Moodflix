@@ -1,7 +1,8 @@
 import { useNavigation, useRoute } from '@react-navigation/native';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,16 +12,17 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { discoverMovies, fetchGenreList, hasApiKey } from '../api/tmdbClient';
+import { asCatalogItem, discoverMovies, fetchGenreList, fetchKeywordIds, hasApiKey, searchMovies, searchTv } from '../api/tmdbClient';
 import { DiscoverAiHero } from '../components/DiscoverAiHero';
+import { MediaKindBadge } from '../components/MediaKindBadge';
+import { catalogKey, kindLabel, openTitle } from '../utils/catalog';
 import { DiscoverThinking } from '../components/DiscoverThinking';
 import { PosterImage } from '../components/PosterImage';
-import { MOOD_GENRES } from '../constants/moodGenres';
-import { useAuth } from '../context/AuthContext';
-import { useProfile } from '../context/ProfileContext';
+import { WatchPriceLine } from '../components/WhereToWatch';
 import { useSettings } from '../context/SettingsContext';
 import { t } from '../i18n/translations';
-import { polishPickReasons, rankDiscoverWithAi } from '../services/discoverAiService';
+import { interpretDiscoverPrompt, polishPickReasons, rankDiscoverWithAi, readDiscoverPhoto } from '../services/discoverAiService';
+import { applyInterpretPlan, readBrief, scoreBrief } from '../services/discoverBrief';
 import { getTheme, isDarkMode } from '../theme/colors';
 import { shadow } from '../theme/shadows';
 
@@ -133,30 +135,6 @@ function assignRandomSpreadMatchPercents(sortedDesc) {
   });
 }
 
-/** Sıra: genelde en çok tercih edilen hisler önce (kaydırmada öne çıkar). */
-const MOODS = [
-  { id: 'happy', emoji: '😄', labelKey: 'moodHappy' },
-  { id: 'chill', emoji: '😎', labelKey: 'moodChill' },
-  { id: 'romantic', emoji: '🥰', labelKey: 'moodRomantic' },
-  { id: 'sad', emoji: '😢', labelKey: 'moodSad' },
-  { id: 'hyped', emoji: '🤩', labelKey: 'moodHyped' },
-  { id: 'scared', emoji: '😱', labelKey: 'moodScared' },
-  { id: 'cozy', emoji: '☕', labelKey: 'moodCozy' },
-  { id: 'thoughtful', emoji: '🤔', labelKey: 'moodThoughtful' },
-  { id: 'adventurous', emoji: '🧭', labelKey: 'moodAdventurous' },
-  { id: 'fantasy', emoji: '✨', labelKey: 'moodFantasy' },
-  { id: 'crime', emoji: '🕵️', labelKey: 'moodCrime' },
-  { id: 'curious', emoji: '🧐', labelKey: 'moodCurious' },
-  { id: 'nostalgic', emoji: '😌', labelKey: 'moodNostalgic' },
-  { id: 'melancholic', emoji: '😔', labelKey: 'moodMelancholic' },
-  { id: 'playful', emoji: '😜', labelKey: 'moodPlayful' },
-  { id: 'heroic', emoji: '⚔️', labelKey: 'moodHeroic' },
-  { id: 'inspired', emoji: '💡', labelKey: 'moodInspired' },
-  { id: 'angry', emoji: '😤', labelKey: 'moodAngry' },
-  { id: 'weird', emoji: '🤪', labelKey: 'moodWeird' },
-  { id: 'dark', emoji: '🖤', labelKey: 'moodDark' },
-];
-
 /** Yıl/puan stepper +/−; koyu temada basılıyken sarı (primary) dolgu. */
 function DiscoverStepButton({ onPress, colors, theme, label, hitSlop }) {
   const isDark = isDarkMode(theme);
@@ -200,8 +178,6 @@ function DiscoverStepButton({ onPress, colors, theme, label, hitSlop }) {
 
 export function DiscoverScreen() {
   const { locale, theme } = useSettings();
-  const { hydrated, isLoggedIn, token } = useAuth();
-  const { submitMood } = useProfile();
   const colors = getTheme(theme);
   const chipBase = [
     styles.chip,
@@ -216,7 +192,11 @@ export function DiscoverScreen() {
 
   const [genres, setGenres] = useState([]);
   const [selectedGenre, setSelectedGenre] = useState(null);
-  const [mood, setMood] = useState(null);
+  const recommendRef = useRef(null);
+  const moodToken = useRef(0);
+  const [photoUri, setPhotoUri] = useState(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoNote, setPhotoNote] = useState(null);
   const currentCalendarYear = new Date().getFullYear();
   const [minYear, setMinYear] = useState(2005);
   const [maxYear, setMaxYear] = useState(currentCalendarYear);
@@ -258,21 +238,15 @@ export function DiscoverScreen() {
     if (selectedGenre) {
       return String(selectedGenre);
     }
-    if (mood) {
-      return MOOD_GENRES[mood].join(',');
-    }
     return undefined;
-  }, [mood, selectedGenre]);
+  }, [selectedGenre]);
 
   const targetGenreIds = useMemo(() => {
     if (selectedGenre) {
       return [selectedGenre];
     }
-    if (mood && MOOD_GENRES[mood]) {
-      return MOOD_GENRES[mood];
-    }
     return [];
-  }, [mood, selectedGenre]);
+  }, [selectedGenre]);
 
   useEffect(() => {
     setMinYearText(String(minYear));
@@ -289,14 +263,97 @@ export function DiscoverScreen() {
   useEffect(() => {
     setRecommendations([]);
     setAiInsight('');
-  }, [mood, selectedGenre]);
+  }, [selectedGenre]);
 
   const clearPicks = useCallback(() => {
     setRecommendations([]);
     setAiInsight('');
   }, []);
 
-  const recommend = async () => {
+  const readFrame = useCallback(
+    async source => {
+      setPhotoNote(null);
+      let result;
+      try {
+        const picker = require('react-native-image-picker');
+        const options = {
+          mediaType: 'photo',
+          quality: 0.4,
+          maxWidth: 960,
+          maxHeight: 960,
+          includeBase64: true,
+          presentationStyle: 'fullScreen',
+        };
+        result =
+          source === 'library'
+            ? await picker.launchImageLibrary({...options, selectionLimit: 1})
+            : await picker.launchCamera({
+                ...options,
+                cameraType: 'back',
+                saveToPhotos: false,
+              });
+      } catch {
+        setPhotoNote('photoCameraOff');
+        return;
+      }
+      if (!result || result.didCancel) {
+        return;
+      }
+      if (result.errorCode === 'permission') {
+        setPhotoNote('photoPermission');
+        return;
+      }
+      if (result.errorCode) {
+        setPhotoNote('photoCameraOff');
+        return;
+      }
+      const asset = result.assets && result.assets[0];
+      if (!asset?.base64 || !asset.uri) {
+        setPhotoNote('photoMiss');
+        return;
+      }
+      const token = moodToken.current + 1;
+      moodToken.current = token;
+      setPhotoUri(asset.uri);
+      setNightPrompt('');
+      setPhotoNote(null);
+      clearPicks();
+      setPhotoBusy(true);
+      try {
+        const reading = await readDiscoverPhoto(asset.base64, locale);
+        if (moodToken.current !== token) {
+          return;
+        }
+        const sentence = String(reading?.sentence || '').trim();
+        const photoPlan = reading
+          ? {
+              keywords: reading.keywords || [],
+              genres: reading.genres || [],
+              tvGenres: reading.tvGenres || [],
+            }
+          : null;
+        if (sentence || photoPlan?.keywords?.length || photoPlan?.genres?.length) {
+          setNightPrompt(sentence);
+          setPhotoNote(null);
+          setPhotoBusy(false);
+          if (recommendRef.current) {
+            await recommendRef.current(sentence, photoPlan);
+          }
+          if (moodToken.current !== token) {
+            clearPicks();
+          }
+        } else {
+          clearPicks();
+          setPhotoNote('photoMiss');
+        }
+      } finally {
+        setPhotoBusy(false);
+      }
+    },
+    [clearPicks, locale],
+  );
+
+  const recommend = async (promptOverride, planOverride) => {
     if (!hasApiKey()) {
       setError('TMDB_API_KEY_MISSING');
       return;
@@ -336,24 +393,134 @@ export function DiscoverScreen() {
         'primary_release_date.lte': `${maxParsed}-12-31`,
         'vote_average.gte': voteParsed,
       };
-      const startPage = 1 + Math.floor(Math.random() * 5);
-      const pages = Array.from(
-        { length: FETCH_PAGE_WINDOW },
-        (_, i) => startPage + i,
-      );
-      const responses = await Promise.all(
-        pages.map(page => discoverMovies(locale, { ...base, page })),
-      );
-
-      const seen = new Set();
+      const typedPrompt = String(
+        typeof promptOverride === 'string' ? promptOverride : nightPrompt || '',
+      ).trim();
+      const photoPlan =
+        planOverride &&
+        typeof planOverride === 'object' &&
+        (planOverride.keywords?.length || planOverride.genres?.length)
+          ? planOverride
+          : null;
+      const plan =
+        photoPlan ||
+        (typedPrompt.length >= 2 ? await interpretDiscoverPrompt(typedPrompt) : null);
+      const brief = applyInterpretPlan(readBrief(typedPrompt), plan);
       const pool = [];
-      for (const res of responses) {
-        for (const r of res.results ?? []) {
-          if (!r?.poster_path || seen.has(r.id)) {
+      const pushRows = (rows, source) => {
+        for (const raw of rows ?? []) {
+          if (!raw?.poster_path || raw.id == null) {
             continue;
           }
-          seen.add(r.id);
-          pool.push(r);
+          const key = catalogKey(raw) || String(raw.id);
+          const prev = pool.find(item => (catalogKey(item) || String(item.id)) === key);
+          if (prev) {
+            if (source === 'keyword') {
+              prev._fromBriefKeyword = true;
+            }
+            if (source === 'genre') {
+              prev._fromBriefGenre = true;
+            }
+            if (source === 'search') {
+              prev._fromBriefSearch = true;
+            }
+            continue;
+          }
+          pool.push({
+            ...raw,
+            _fromBriefKeyword: source === 'keyword',
+            _fromBriefGenre: source === 'genre',
+            _fromBriefSearch: source === 'search',
+          });
+        }
+      };
+
+      const promptActive = photoPlan || (typedPrompt.length >= 2 && brief.active);
+      if (!promptActive) {
+        const startPage = 1 + Math.floor(Math.random() * 5);
+        const pages = Array.from({length: FETCH_PAGE_WINDOW}, (_, i) => startPage + i);
+        const responses = await Promise.all(
+          pages.map(page => discoverMovies(locale, {...base, page})),
+        );
+        for (const res of responses) {
+          pushRows(res.results, null);
+        }
+      } else {
+        const jobs = [];
+        if (brief.genres.length) {
+          const genreBase = {
+            ...base,
+            with_genres: brief.genres.join('|'),
+            tv_genres: brief.tvGenres.join('|'),
+            'vote_count.gte': 40,
+          };
+          jobs.push(
+            ...[1, 2].map(page =>
+              discoverMovies(locale, {...genreBase, page})
+                .then(res => pushRows(res.results, 'genre'))
+                .catch(() => undefined),
+            ),
+          );
+        }
+        if (brief.keywordQueries.length) {
+          jobs.push(
+            fetchKeywordIds(locale, brief.keywordQueries).then(async keywordIds => {
+              if (!keywordIds.length) {
+                return;
+              }
+              const keywordBase = {
+                ...base,
+                with_keywords: keywordIds.join('|'),
+                'vote_count.gte': 30,
+              };
+              const pages = await Promise.all(
+                [1, 2].map(page =>
+                  discoverMovies(locale, {...keywordBase, page}).catch(() => ({results: []})),
+                ),
+              );
+              for (const res of pages) {
+                pushRows(res.results, 'keyword');
+              }
+            }),
+          );
+        }
+        for (const query of (brief.keywordQueries || []).slice(0, 4)) {
+          jobs.push(
+            Promise.all([
+              searchMovies(locale, query, 1).catch(() => ({results: []})),
+              searchTv(locale, query, 1).catch(() => ({results: []})),
+            ]).then(([movies, shows]) => {
+              pushRows(
+                (movies.results || []).map(row => asCatalogItem(row, 'movie')).filter(Boolean),
+                'keyword',
+              );
+              pushRows(
+                (shows.results || []).map(row => asCatalogItem(row, 'tv')).filter(Boolean),
+                'keyword',
+              );
+            }),
+          );
+        }
+        const searchQuery = typedPrompt.replace(/\s+/g, ' ').slice(0, 80);
+        jobs.push(
+          Promise.all([
+            searchMovies(locale, searchQuery, 1).catch(() => ({results: []})),
+            searchTv(locale, searchQuery, 1).catch(() => ({results: []})),
+          ]).then(([movies, shows]) => {
+            pushRows(
+              (movies.results || []).map(row => asCatalogItem(row, 'movie')).filter(Boolean),
+              'search',
+            );
+            pushRows(
+              (shows.results || []).map(row => asCatalogItem(row, 'tv')).filter(Boolean),
+              'search',
+            );
+          }),
+        );
+        await Promise.all(jobs);
+        if (!photoPlan && pool.length < 5) {
+          const filler = await discoverMovies(locale, {...base, page: 1}).catch(() => ({results: []}));
+          pushRows(filler.results, null);
         }
       }
 
@@ -368,11 +535,25 @@ export function DiscoverScreen() {
         maxYear: maxParsed,
         minVote: voteParsed,
       };
-      const scored = pool.map(movie => ({
-        movie,
-        rawBlend: computeDiscoverRawBlend(movie, ctx),
-      }));
+      const scored = pool.map(movie => {
+        const briefFit = scoreBrief(movie, brief);
+        const baseBlend = computeDiscoverRawBlend(movie, ctx);
+        const briefNorm = Math.min(1, briefFit.score / 6);
+        return {
+          movie: {
+            ...movie,
+            briefHits: briefFit.hits.length ? briefFit.hits : brief.themes,
+            briefLoose: brief.active && briefFit.score === 0,
+          },
+          rawBlend: brief.active ? Math.max(baseBlend, 0.62 + 0.34 * briefNorm) : baseBlend,
+          briefScore: briefFit.score,
+          briefHits: briefFit.hits.length ? briefFit.hits : brief.themes,
+        };
+      });
       scored.sort((a, b) => {
+        if (brief.active && b.briefScore !== a.briefScore) {
+          return b.briefScore - a.briefScore;
+        }
         let d = b.rawBlend - a.rawBlend;
         if (d) {
           return d;
@@ -384,42 +565,57 @@ export function DiscoverScreen() {
         return (b.movie.popularity ?? 0) - (a.movie.popularity ?? 0);
       });
 
-      const localTop = assignRandomSpreadMatchPercents(scored.slice(0, PICK_COUNT));
+      const fitted = brief.active ? scored.filter(row => row.briefScore > 0) : scored;
+      const photoTight = photoPlan ? scored.filter(row => row.briefScore >= 3) : null;
+      const ranked = photoTight
+        ? photoTight
+        : fitted.length >= PICK_COUNT || !brief.active
+          ? fitted
+          : scored;
+      if (photoPlan && !ranked.length) {
+        setError('empty');
+        return;
+      }
+
+      const localTop = assignRandomSpreadMatchPercents(ranked.slice(0, PICK_COUNT));
       const genreNameById = {};
       (genres || []).forEach(g => {
         genreNameById[g.id] = g.name;
       });
       try {
         const ai = await rankDiscoverWithAi({
-          mood,
-          prompt: nightPrompt,
+          mood: null,
+          prompt: typedPrompt,
           locale,
           minYear: minParsed,
           maxYear: maxParsed,
           minVote: voteParsed,
-          candidates: scored.slice(0, 18).map(row => ({
-            id: row.movie.id,
+          candidates: ranked.slice(0, 12).map(row => ({
+            id: catalogKey(row.movie) || String(row.movie.id),
             title: row.movie.title,
             year: parseReleaseYear(row.movie),
             voteAverage: row.movie.vote_average,
             popularity: row.movie.popularity,
             overview: row.movie.overview,
+            mediaType: row.movie.media_type,
+            briefHits: row.briefHits,
             genres: (row.movie.genre_ids || [])
               .map(id => genreNameById[id])
               .filter(Boolean),
           })),
         });
-        const byId = new Map(pool.map(m => [Number(m.id), m]));
-        const copyCtx = {locale, mood, prompt: nightPrompt};
+        const byId = new Map(pool.map(m => [catalogKey(m) || String(m.id), m]));
+        const copyCtx = {locale, mood: null, prompt: typedPrompt};
         const withGenresOnMovie = movie => ({
           ...movie,
+          briefHits: ranked.find(row => (catalogKey(row.movie) || String(row.movie.id)) === (catalogKey(movie) || String(movie.id)))?.briefHits || movie.briefHits || [],
           genres: (movie.genre_ids || [])
             .map(id => genreNameById[id])
             .filter(Boolean),
         });
         const merged = (ai.picks || [])
           .map(p => {
-            const movie = byId.get(Number(p.id));
+            const movie = byId.get(String(p.id));
             if (!movie) {
               return null;
             }
@@ -451,12 +647,18 @@ export function DiscoverScreen() {
               ...row,
               movie: {
                 ...row.movie,
+                briefHits:
+                  ranked.find(
+                    item =>
+                      (catalogKey(item.movie) || String(item.movie.id)) ===
+                      (catalogKey(row.movie) || String(row.movie.id)),
+                  )?.briefHits || [],
                 genres: (row.movie.genre_ids || [])
                   .map(id => genreNameById[id])
                   .filter(Boolean),
               },
             })),
-            {locale, mood, prompt: nightPrompt},
+            {locale, mood: null, prompt: typedPrompt},
           ),
         );
       }
@@ -510,6 +712,8 @@ export function DiscoverScreen() {
     setMinVoteText(v.toFixed(1));
   };
 
+  recommendRef.current = recommend;
+
   return (
     <SafeAreaView
       style={[styles.safe, { backgroundColor: colors.background }]}
@@ -545,7 +749,15 @@ export function DiscoverScreen() {
             </Text>
             <TextInput
               value={nightPrompt}
-              onChangeText={setNightPrompt}
+              onChangeText={text => {
+                if (photoUri) {
+                  moodToken.current += 1;
+                  setPhotoUri(null);
+                  setPhotoNote(null);
+                  clearPicks();
+                }
+                setNightPrompt(text);
+              }}
               placeholder={t(locale, 'discoverAiPromptPlaceholder')}
               placeholderTextColor={colors.textMuted}
               multiline
@@ -558,60 +770,86 @@ export function DiscoverScreen() {
                 },
               ]}
             />
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.hScroll}
+            <View
+              style={[
+                styles.photoCard,
+                {
+                  borderColor: `${colors.primary}40`,
+                  backgroundColor: colors.surface,
+                },
+              ]}
             >
-              {MOODS.map(m => {
-                const active = mood === m.id;
-                return (
+              {photoUri ? (
+                <Image source={{uri: photoUri}} style={styles.photoThumb} />
+              ) : (
+                <View
+                  style={[
+                    styles.photoThumb,
+                    styles.photoEmpty,
+                    {borderColor: `${colors.primary}55`},
+                  ]}
+                >
+                  <Text style={[styles.photoMark, {color: colors.primary}]}>◎</Text>
+                </View>
+              )}
+              <View style={styles.photoCopy}>
+                {photoBusy ? (
+                  <Text style={[styles.photoHintText, {color: colors.textMuted}]}>
+                    {t(locale, 'photoReading')}
+                  </Text>
+                ) : null}
+                {photoNote ? (
+                  <Text style={[styles.photoNote, {color: colors.primary}]}>
+                    {t(locale, photoNote)}
+                  </Text>
+                ) : null}
+                <View style={styles.photoActions}>
                   <TouchableOpacity
-                    key={m.id}
                     activeOpacity={0.88}
+                    disabled={photoBusy}
                     onPress={() => {
-                      if (!active) {
-                        setMood(m.id);
-                        if (hydrated && isLoggedIn && token) {
-                          void submitMood({ mood: m.id, context: 'discover' });
-                        }
-                      } else {
-                        setMood(null);
-                      }
+                      readFrame('camera');
                     }}
                     style={[
-                      styles.chip,
-                      styles.moodChip,
-                      active
-                        ? {
-                            borderWidth: StyleSheet.hairlineWidth,
-                            borderColor: colors.primary,
-                            backgroundColor: `${colors.primary}22`,
-                          }
-                        : {
-                            borderWidth: StyleSheet.hairlineWidth,
-                            borderColor: `${colors.primary}28`,
-                            backgroundColor: 'transparent',
-                          },
+                      styles.photoBtn,
+                      {borderColor: colors.primary, backgroundColor: colors.primary},
                     ]}
                   >
-                    <Text style={styles.moodEmoji}>{m.emoji}</Text>
-                    <Text
-                      numberOfLines={2}
-                      style={[
-                        styles.moodChipLabel,
-                        {
-                          color: active ? colors.primary : colors.textMuted,
-                          fontWeight: active ? '600' : '400',
-                        },
-                      ]}
-                    >
-                      {t(locale, m.labelKey)}
+                    <Text style={[styles.photoBtnLabel, {color: colors.onPrimary}]}>
+                      {t(locale, 'photoTake')}
                     </Text>
                   </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
+                  <TouchableOpacity
+                    activeOpacity={0.88}
+                    disabled={photoBusy}
+                    onPress={() => {
+                      readFrame('library');
+                    }}
+                    style={[styles.photoBtn, {borderColor: `${colors.primary}66`}]}
+                  >
+                    <Text style={[styles.photoBtnLabel, {color: colors.primary}]}>
+                      {t(locale, 'photoLibrary')}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                {photoUri ? (
+                  <TouchableOpacity
+                    onPress={() => {
+                      moodToken.current += 1;
+                      setPhotoUri(null);
+                      setPhotoNote(null);
+                      setNightPrompt('');
+                      clearPicks();
+                    }}
+                    hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
+                  >
+                    <Text style={[styles.photoClear, {color: colors.textMuted}]}>
+                      {t(locale, 'photoClear')}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            </View>
           </View>
 
           <View style={styles.section}>
@@ -834,7 +1072,7 @@ export function DiscoverScreen() {
             </View>
           </View>
 
-          {error === 'empty' ? (
+          {error === 'empty' || error === 'brief' ? (
             <View
               style={[
                 styles.note,
@@ -844,7 +1082,7 @@ export function DiscoverScreen() {
               <Text
                 style={{ color: colors.pass, fontWeight: '600', fontSize: 14 }}
               >
-                {t(locale, 'noResults')}
+                {t(locale, error === 'brief' ? 'discoverBriefMiss' : 'noResults')}
               </Text>
             </View>
           ) : error ? (
@@ -863,14 +1101,14 @@ export function DiscoverScreen() {
           ) : null}
 
           <TouchableOpacity
-            disabled={busy}
+            disabled={busy || photoBusy}
             activeOpacity={0.9}
             onPress={() => void recommend()}
             style={[
               styles.heroCta,
               {
                 backgroundColor: colors.primary,
-                opacity: busy ? 0.7 : 1,
+                opacity: busy || photoBusy ? 0.7 : 1,
               },
             ]}
           >
@@ -928,11 +1166,9 @@ export function DiscoverScreen() {
               </Text>
               {recommendations.map(({ movie, matchPercent, reason }, index) => (
                 <TouchableOpacity
-                  key={movie.id}
+                  key={catalogKey(movie) || String(movie.id)}
                   activeOpacity={0.88}
-                  onPress={() =>
-                    navigation.navigate('MovieDetail', { movieId: movie.id })
-                  }
+                  onPress={() => openTitle(navigation, movie)}
                   style={[
                     styles.pickCard,
                     {
@@ -945,12 +1181,13 @@ export function DiscoverScreen() {
                   <Text style={[styles.pickIndex, { color: `${colors.primary}99` }]}>
                     {String(index + 1).padStart(2, '0')}
                   </Text>
-                  <View style={[styles.pickPosterFrame, shadow.poster]}>
+                  <View style={[styles.pickPosterFrame, shadow.poster, { overflow: 'hidden' }]}>
                     <PosterImage
                       posterPath={movie.poster_path}
                       colors={colors}
                       size="small"
                     />
+                    <MediaKindBadge item={movie} locale={locale} />
                   </View>
                   <View style={styles.pickBody}>
                     <View style={styles.pickTop}>
@@ -976,8 +1213,9 @@ export function DiscoverScreen() {
                     <Text
                       style={[styles.pickMeta, { color: colors.textMuted }]}
                     >
-                      ★ {(movie.vote_average ?? 0).toFixed(1)}
+                      {kindLabel(movie, locale)} · ★ {(movie.vote_average ?? 0).toFixed(1)}
                     </Text>
+                    <WatchPriceLine movie={movie} locale={locale} colors={colors} lines={2} />
                     {reason ? (
                       <Text
                         numberOfLines={4}
@@ -1067,23 +1305,39 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     borderRadius: 999,
   },
-  moodChip: {
-    minWidth: 88,
-    maxWidth: 104,
+  photoCard: {
+    marginHorizontal: 20,
+    marginTop: 0,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  photoThumb: {
+    width: 72,
+    height: 72,
+    borderRadius: 14,
+  },
+  photoEmpty: {
+    borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 8,
   },
-  moodEmoji: { fontSize: 22, lineHeight: 26 },
-  moodChipLabel: {
-    marginTop: 8,
-    fontSize: 11,
-    fontWeight: '400',
-    letterSpacing: 0.4,
-    textAlign: 'center',
-    lineHeight: 14,
+  photoMark: { fontSize: 28, lineHeight: 32 },
+  photoCopy: { flex: 1, gap: 8 },
+  photoHintText: { fontSize: 13, lineHeight: 18 },
+  photoNote: { fontSize: 12, lineHeight: 16 },
+  photoActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  photoBtn: {
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
+  photoBtnLabel: { fontSize: 12, fontWeight: '600' },
+  photoClear: { fontSize: 12 },
   chipLabel: { fontSize: 13, fontWeight: '400', letterSpacing: 0.3 },
   tunePanel: {
     marginHorizontal: 20,

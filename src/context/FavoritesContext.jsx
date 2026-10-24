@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, {createContext, useCallback, useContext, useEffect, useMemo, useState} from 'react';
-import {movieIdentityKey} from '../utils/profileMovie';
+import {catalogKey} from '../utils/catalog';
 
 const STORAGE_KEY = '@moodflix/favorites';
 
@@ -20,6 +20,7 @@ function compactMovie(movie) {
     title: String(movie.title ?? movie.name ?? ''),
     poster_path:
       movie.poster_path ?? movie.posterPath ?? movie.backdrop_path ?? null,
+    media_type: movie.media_type === 'tv' ? 'tv' : 'movie',
   };
 }
 
@@ -39,11 +40,11 @@ function persist(list) {
 
 function upsertIntoMemory(movie) {
   const compact = compactMovie(movie);
-  const incomingKey = movieIdentityKey(compact?.id);
+  const incomingKey = catalogKey(compact);
   if (!incomingKey) {
     return false;
   }
-  if (memory.some(m => movieIdentityKey(m?.id) === incomingKey)) {
+  if (memory.some(m => catalogKey(m) === incomingKey)) {
     return true;
   }
   memory = [compact, ...memory];
@@ -54,13 +55,13 @@ function upsertIntoMemory(movie) {
 
 function toggleInMemory(movie) {
   const compact = compactMovie(movie);
-  const incomingKey = movieIdentityKey(compact?.id);
+  const incomingKey = catalogKey(compact);
   if (!incomingKey) {
     return false;
   }
-  const exists = memory.some(m => movieIdentityKey(m?.id) === incomingKey);
+  const exists = memory.some(m => catalogKey(m) === incomingKey);
   memory = exists
-    ? memory.filter(m => movieIdentityKey(m?.id) !== incomingKey)
+    ? memory.filter(m => catalogKey(m) !== incomingKey)
     : [compact, ...memory];
   persist(memory);
   emit();
@@ -86,14 +87,14 @@ function loadFromStorage() {
       }
       const map = new Map();
       parsed.forEach(m => {
-        const key = movieIdentityKey(m?.id ?? m?.movieId);
         const compact = compactMovie(m);
+        const key = catalogKey(compact);
         if (key && compact) {
           map.set(key, compact);
         }
       });
       memory.forEach(m => {
-        const key = movieIdentityKey(m?.id);
+        const key = catalogKey(m);
         if (key) {
           map.set(key, m);
         }
@@ -129,11 +130,20 @@ export function FavoritesProvider({children}) {
   const addFavorite = useCallback(movie => upsertIntoMemory(movie), []);
 
   const ids = useMemo(
-    () => new Set(favorites.map(m => movieIdentityKey(m.id)).filter(Boolean)),
+    () => new Set(favorites.map(m => catalogKey(m)).filter(Boolean)),
     [favorites],
   );
 
-  const isFavorite = useCallback(id => ids.has(movieIdentityKey(id)), [ids]);
+  const isFavorite = useCallback(
+    (itemOrId, mediaType) => {
+      const key =
+        itemOrId && typeof itemOrId === 'object'
+          ? catalogKey(itemOrId)
+          : catalogKey({id: itemOrId, media_type: mediaType});
+      return Boolean(key) && ids.has(key);
+    },
+    [ids],
+  );
 
   const value = useMemo(
     () => ({
